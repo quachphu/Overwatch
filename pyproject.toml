@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "overwatch"
+version = "0.1.0"
+description = "Agent-run QA that hires humans to verify its own findings, and measures whether that helped."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+
+# Kept in lockstep with requirements.txt, which stays the installer of record: `pip install -r`
+# is what the deploy box and the Makefile run, and a hackathon is the wrong place to discover a
+# packaging difference. See docs/DECISIONS.md 011.
+dependencies = [
+  "fastapi==0.115.*",
+  "uvicorn[standard]==0.32.*",
+  "jinja2==3.1.*",
+  "python-multipart==0.0.*",
+  "httpx>=0.28.1,<0.29",
+  "pydantic==2.13.*",
+  "python-dotenv>=1.2.2",
+  "sqlalchemy==2.0.*",
+  "psycopg[binary]==3.2.*",
+  "langgraph==1.2.11",
+  "langchain-openai==1.5.1",
+  "anthropic==0.122.0",
+  "band-sdk[langgraph]==1.6.0",
+  "render_sdk==0.7.0",
+  "superserve==0.8.2",
+  "whop_sdk==0.0.41",
+  "playwright==1.48.*",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.*",
+  "pytest-asyncio==0.24.*",
+  "ruff==0.8.*",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ── Lint and format ──────────────────────────────────────────────────────────────────
+# One tool for both, because two tools means two configs that disagree about line length.
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "front-end", "docs"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle
+  "E402", # module import not at top of file — explicit, `E` alone does not imply it
+  "F",    # pyflakes — the ones that catch real bugs
+  "I",    # import sorting
+  "N",    # pep8-naming. Enabled so the `# noqa: N815` markers on Terac's camelCase wire
+          # fields in app/models.py are load-bearing documentation rather than dead comments.
+  "UP",   # pyupgrade
+  "B",    # bugbear: mutable defaults, unused loop vars, except-pass
+  "ASYNC",# blocking calls inside async def
+  "S",    # bandit security rules
+  "DTZ",  # naive datetimes — we compare timestamps against webhook clocks
+  "RUF",
+]
+ignore = [
+  "E501",   # line length is enforced by the formatter, not by the linter
+  "B008",   # FastAPI's Depends()/Header() in defaults is the documented idiom
+  "S101",   # assert is how tests assert
+  "RUF012", # ClassVar annotations on mutable class attrs: noisy for our dataclasses
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Probes and dev scripts: they print by design, call our own localhost URLs through urllib
+# (S310), and use fixed /tmp paths for throwaway test databases (S108).
+# DTZ005: `datetime.now()` in probe_terac prints local wall-clock time for an operator watching
+# a real clock during the round-1 timing measurement. Local is the correct zone there; forcing
+# UTC would display a time that does not match the room.
+"scripts/*" = ["S105", "S106", "S108", "S310", "S311", "T201", "DTZ005"]
+# Tests construct deliberately bad input and hardcode fake secrets.
+"tests/*" = ["S105", "S106", "S311", "ARG"]
+# S311 flags `random` as unsuitable for cryptography. These three uses are not cryptographic:
+#   triage/metrics — deterministic, seeded shuffles. Reproducibility is the requirement, and
+#     `secrets` cannot be seeded, so it is the wrong tool rather than the safer one.
+#   terac client   — exponential-backoff jitter.
+"app/triage.py" = ["S311"]
+"app/metrics.py" = ["S311"]
+"app/clients/terac.py" = ["S311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error::DeprecationWarning:app.*"]

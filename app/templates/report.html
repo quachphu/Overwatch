@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}QA report — {{ scan_url }}{% endblock %}
+
+{#  The customer deliverable.
+
+    Two honesty requirements baked into the markup rather than left to the operator:
+      * A seeded (fallback) scan is labelled as such on its face — app/sources/seed.py exists
+        for the 12:30 gate and must never be presentable as a live scan.
+      * An open Critic veto blocks the findings from rendering at all. docs/AGENTS.md makes a
+        veto terminal, and a template that shows the report anyway would make the governance
+        property decorative.
+#}
+
+{% block nav %}
+<nav class="nav-pill">
+  <a href="/report/{{ scan_id }}?version=1">v1</a>
+  <a href="/report/{{ scan_id }}?version=2">v2</a>
+  <a href="/dashboard?scan_id={{ scan_id }}">Results</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<main>
+  <p class="eyebrow">Report v{{ version }}{% if version == 2 %} · recalibrated by human judgment{% endif %}</p>
+  <h1 style="word-break: break-word">{{ scan_url }}</h1>
+
+  <div class="row" style="margin: 1rem 0 1.5rem">
+    <span class="badge badge--plain">{{ findings | length }} findings</span>
+    <span class="badge badge--plain">status: {{ scan_status }}</span>
+    <span class="badge badge--plain">source: {{ scan_source }}</span>
+    {% if released %}<span class="badge badge--good">released</span>{% endif %}
+  </div>
+
+  {% if scan_source == 'seed' %}
+  <div class="notice notice--warn" style="margin-bottom: 1.5rem">
+    <strong>This is a recorded fallback finding set, not a live scan.</strong> It exists so
+    the human-verification rounds could launch on schedule when the live scanner was
+    unavailable. The screenshots are placeholders.
+  </div>
+  {% endif %}
+
+  {% if vetoes %}
+  <div class="notice notice--block" style="margin-bottom: 1.5rem">
+    <strong>BLOCKED by Critic — this report is not released.</strong>
+    <ul style="margin: 0.5rem 0 0; padding-left: 1.25rem">
+      {% for v in vetoes %}
+      <li>{{ v.reason }}{% if v.finding_id %} <span class="mono">({{ v.finding_id }})</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% else %}
+
+  {% if version == 2 and result.n_labels %}
+  <div class="notice notice--ok" style="margin-bottom: 1.5rem">
+    This ranking was recalibrated using <strong>{{ result.n_labels }} judgments</strong> from
+    {{ result.n_raters }} people hired through Terac. Findings a majority judged unreal were
+    demoted; findings they confirmed as severe were promoted.
+    <a href="/dashboard?scan_id={{ scan_id }}">See the measurement →</a>
+  </div>
+  {% endif %}
+
+  {% if not findings %}
+  <div class="notice">
+    No findings. A clean app is a real result and we are not going to invent problems to fill
+    a page.
+  </div>
+  {% endif %}
+
+  {% for f in findings %}
+  <section class="card" style="margin-bottom: 1rem">
+    <div class="card__head">
+      <span class="rank">{{ '%02d' % f.position }}</span>
+      <h2 style="font-size: 1.125rem">{{ f.journey }}</h2>
+      <span class="badge badge--{{ f.severity }}">{{ f.severity }}</span>
+      <span class="badge badge--plain">{{ f.category }}</span>
+      <span class="spacer"></span>
+      <span class="muted mono">confidence {{ '%.2f' % f.confidence }}</span>
+    </div>
+
+    <dl class="evidence">
+      <div><dt>Tried to</dt><dd>{{ f.step_intent }}</dd></div>
+      <div><dt>Expected</dt><dd>{{ f.expected }}</dd></div>
+      <div><dt>Observed</dt><dd>{{ f.observed }}</dd></div>
+    </dl>
+
+    {% if f.failed_requests or f.console_errors %}
+    <pre class="console" style="margin-top: 1rem">
+{%- for r in f.failed_requests %}{{ r }}
+{% endfor %}{% for c in f.console_errors %}{{ c }}
+{% endfor %}</pre>
+    {% endif %}
+
+    {% if f.before or f.after %}
+    <div class="shots" style="margin-top: 1rem">
+      {% if f.before %}
+      <figure class="shot" style="margin: 0">
+        <img src="{{ f.before }}" alt="Before" loading="lazy" /><figcaption>Before</figcaption>
+      </figure>
+      {% endif %}
+      {% if f.after %}
+      <figure class="shot" style="margin: 0">
+        <img src="{{ f.after }}" alt="After" loading="lazy" /><figcaption>After</figcaption>
+      </figure>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+  {% endif %}
+</main>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Done — thank you{% endblock %}
+{% block shell_class %}shell--narrow{% endblock %}
+
+{% block content %}
+<main>
+  <h1>That's everything. Thank you.</h1>
+  <div class="notice notice--ok" style="margin: 1.5rem 0">
+    {% if round == 1 %}
+    We recorded {{ saved }} {{ 'judgement' if saved == 1 else 'judgements' }}. Your answers go
+    straight into deciding which of these findings are real — they are not a formality.
+    {% else %}
+    Your choice is recorded. You have just helped settle whether a change we made to our
+    ranking was actually an improvement.
+    {% endif %}
+  </div>
+  {% if rejected %}
+  <div class="notice notice--warn" style="margin: 1.5rem 0">
+    {{ rejected }} of your answers did not reach us intact and were not stored. That is our
+    fault, not yours. Message us on the Terac task and we will sort it out.
+  </div>
+  {% endif %}
+  <p class="muted">You can close this tab and mark the task complete on Terac.</p>
+</main>
+{% endblock %}

@@ -1,0 +1,44 @@
+# Pinned to exact versions that were installed and imported successfully on 2026-08-14.
+#
+# Exact pins rather than ranges, for one reason: with `pydantic==2.9.*`, `httpx==0.27.*` and
+# five unpinned agent/sponsor packages, pip backtracked for 29 minutes and died with
+# ResolutionTooDeep. We do not have 29 minutes, and a resolver that has to search is a resolver
+# that can pick something different on the deploy box than on the laptop.
+#
+# Three pins are forced by dependencies rather than chosen:
+#   python-dotenv >= 1.2.2   band-sdk 1.6.0 requires it
+#   httpx         0.28.x     render-sdk 0.7.0 requires >=0.28.1,<0.29
+#   pydantic      2.13.x     langchain-core 1.5.x and band-sdk both want > 2.9
+
+# Core
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+jinja2==3.1.*
+# Starlette needs this to parse a form body. Without it every task-page POST returns 500 —
+# which means every human judgment we paid for is lost, and the page looks fine until submit.
+python-multipart==0.0.*
+httpx>=0.28.1,<0.29
+pydantic==2.13.*
+python-dotenv>=1.2.2
+
+# DB
+sqlalchemy==2.0.*
+psycopg[binary]==3.2.*
+
+# Agents
+langgraph==1.2.11
+langchain-openai==1.5.1
+anthropic==0.122.0
+band-sdk[langgraph]==1.6.0   # NOTE: install name band-sdk, import name `band`
+
+# Sponsors
+render_sdk==0.7.0
+superserve==0.8.2
+whop_sdk==0.0.41
+
+# Browser fallback only
+playwright==1.48.*
+
+# Tests — `make test`
+pytest==8.3.*
+pytest-asyncio==0.24.*

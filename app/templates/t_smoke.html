@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Quick screenshot check{% endblock %}
+{% block shell_class %}shell--narrow{% endblock %}
+
+{#  The 10:45 latency probe's landing page.
+
+    Its only job is to exist and load instantly. This page is not measuring anything about
+    the participant — it is measuring Terac's minutes-to-first-completion, which is the
+    number the entire day's schedule is derived from (RESEARCH.md §8.4). So: no images, no
+    dependencies, nothing that can fail.
+#}
+
+{% block content %}
+<main>
+  <p class="eyebrow">Task · about 2 minutes</p>
+  <h1>Thanks — you're in the right place.</h1>
+
+  <div class="card" style="margin: 1.5rem 0">
+    <p style="margin-top: 0">
+      This is a timing check for a research tool. There is nothing to install and nothing to
+      buy. Answer the one question below and you're done.
+    </p>
+
+    <form method="post" action="/t/smoke" onsubmit="this.querySelector('button').disabled = true">
+      <input type="hidden" name="participant_id" value="{{ participant_id }}" />
+      <fieldset style="border: 0; padding: 0; margin: 0 0 1.25rem">
+        <legend style="padding: 0; margin-bottom: 0.625rem; font-weight: 500">
+          Which of these are you reading this on?
+        </legend>
+        <div class="choices">
+          <label class="choice"><input type="radio" name="device" value="phone" required /> A phone</label>
+          <label class="choice"><input type="radio" name="device" value="tablet" /> A tablet</label>
+          <label class="choice"><input type="radio" name="device" value="laptop" /> A laptop or desktop</label>
+        </div>
+      </fieldset>
+      <button class="btn btn--block" type="submit">Submit and finish</button>
+    </form>
+  </div>
+
+  {% if participant_id %}
+  <p class="muted mono" style="font-size: 0.75rem">participant {{ participant_id[:16] }}</p>
+  {% else %}
+  <p class="notice notice--warn">
+    No participant id was passed to this page. That is fine for a smoke test, but it means
+    this response cannot be joined to a Terac submission.
+  </p>
+  {% endif %}
+</main>
+{% endblock %}

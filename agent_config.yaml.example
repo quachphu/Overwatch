@@ -1,0 +1,27 @@
+# Copy to agent_config.yaml and fill in. That file is gitignored — see .gitignore.
+#
+# Five separate "Connect Remote Agent" registrations at app.band.ai/agents, each with its own
+# UUID and its own API key. The key is shown exactly once, so paste it here immediately.
+#
+# Register them under these display names: Scout, Triage Officer, Recruiter, Bursar, Critic.
+# Never "Assistant", "Bot", or "Agent" — an LLM reads those as role tokens and mention routing
+# degrades (docs/AGENTS.md).
+#
+# One live WebSocket per agent_id. Two processes sharing an id and the first is dropped
+# silently, with no error on either side. Never reuse an id across agents.
+
+scout:
+  agent_id: ""
+  api_key: ""
+triage:
+  agent_id: ""
+  api_key: ""
+recruiter:
+  agent_id: ""
+  api_key: ""
+bursar:
+  agent_id: ""
+  api_key: ""
+critic:
+  agent_id: ""
+  api_key: ""

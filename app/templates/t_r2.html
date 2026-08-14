@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Which bug report is more useful?{% endblock %}
+
+{#  Round 2 — forced-choice comparison.
+
+    Three things this template must never do:
+      1. Reveal which side is v2. They are "Report A" and "Report B", and the side is
+         randomized per participant and persisted (SPECS.md §5.3).
+      2. Present the two sides at different visual weight. Identical markup, identical
+         depth — otherwise we measure styling, not ranking.
+      3. Let a participant submit without choosing. The choice is the datum.
+#}
+
+{% block content %}
+<main>
+  <p class="eyebrow">Task · about 3 minutes</p>
+  <h1>Which bug report would you rather receive?</h1>
+  <p class="lede">
+    Both reports below describe the same website and were produced by the same automated
+    test. They list the same problems in a different order. Imagine you are on the team that
+    has to fix this site and you only have time to work down the list from the top.
+    <strong>Which one is more useful?</strong>
+  </p>
+
+  <form method="post" action="/t/r2/{{ scan_id }}">
+    <input type="hidden" name="participant_id" value="{{ participant_id }}" />
+    {# Which report the browser actually put on the left. The server compares this against the
+       stored assignment and refuses the vote if they disagree, so a stale page cannot record a
+       preference for the report the participant did not pick. #}
+    <input type="hidden" name="left_version" value="{{ left_version }}" />
+
+    <div class="grid grid--2" style="margin: 1.75rem 0">
+      {% for side, rows in [('left', left), ('right', right)] %}
+      <section class="card">
+        <div class="card__head">
+          <h2>Report {{ 'A' if side == 'left' else 'B' }}</h2>
+          <span class="muted" style="font-size: 0.8125rem">top {{ rows | length }}</span>
+        </div>
+        <ol class="ranked">
+          {% for row in rows %}
+          <li>
+            <span class="rank">{{ row.position }}</span>
+            <div>
+              <div class="row" style="gap: 0.5rem; margin-bottom: 0.25rem">
+                <strong style="font-size: 0.9375rem">{{ row.journey }}</strong>
+                <span class="badge badge--{{ row.severity }}">{{ row.severity }}</span>
+              </div>
+              <div class="muted" style="font-size: 0.875rem">{{ row.step_intent }}</div>
+              <div style="font-size: 0.875rem; margin-top: 0.25rem">{{ row.observed }}</div>
+            </div>
+          </li>
+          {% endfor %}
+        </ol>
+      </section>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <fieldset style="border: 0; padding: 0; margin: 0 0 1.25rem">
+        <legend style="padding: 0; margin-bottom: 0.625rem; font-weight: 500">
+          Which report is more useful?
+        </legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="choice" value="left" required /> Report A
+          </label>
+          <label class="choice">
+            <input type="radio" name="choice" value="right" /> Report B
+          </label>
+        </div>
+      </fieldset>
+
+      <label class="field" style="margin: 0">
+        <span>In one line, why? (optional)</span>
+        <input type="text" name="why" maxlength="240" placeholder="e.g. the serious problems are nearer the top" />
+      </label>
+    </div>
+
+    <div class="sticky-actions">
+      <button class="btn btn--lg btn--block" type="submit">Submit my choice</button>
+    </div>
+  </form>
+</main>
+{% endblock %}

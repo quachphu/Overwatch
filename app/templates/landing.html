@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Overwatch — QA verified by humans{% endblock %}
+
+{#  Fallback landing page.
+
+    `/` prefers front-end/dist/index.html (the React hero built to design_prompt.md). This
+    template is what renders when no node build exists — on a fresh clone, or if the build
+    step is cut for time. It reuses the same design tokens from overwatch.css so the fallback
+    is the same design, not a different one, and it posts to the same ingress.
+#}
+
+{% block nav %}
+<nav class="nav-pill">
+  <a href="/dashboard">Results</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<main>
+  <p class="eyebrow">Automated QA · verified by paid humans</p>
+  <h1 style="max-width: 34rem">QA that hires humans to check its own work</h1>
+
+  <p class="lede" style="margin-top: 1rem">
+    Agents scan your app and rank what they find. We then pay real people through Terac to say
+    which findings are real, and re-rank on their answers. A second panel, blind to the first,
+    judges whether the report actually got better.
+  </p>
+
+  <form id="start" class="capsule" style="margin-top: 2rem" autocomplete="off">
+    <label class="sr-only" for="url">Your app URL</label>
+    <input id="url" name="url" type="url" placeholder="Paste your app URL" required />
+    <button class="btn" type="submit">Scan my app</button>
+  </form>
+  <p id="note" class="muted" style="margin-top: 0.75rem; min-height: 1.25rem"></p>
+
+  <div class="grid grid--2" style="margin-top: 3rem; max-width: 40rem">
+    <div class="card">
+      <p class="figure">2</p>
+      <p class="muted" style="margin-top: 0.75rem">
+        Independent human panels per scan: one verifies the findings, one judges whether the
+        report got better.
+      </p>
+    </div>
+    <div class="card">
+      <p class="eyebrow">How it works</p>
+      <p class="muted" style="margin-top: 0.75rem">
+        Every finding carries the journey, what we expected, what we observed, and a
+        screenshot — so a rater can judge it in under a minute without your codebase.
+      </p>
+    </div>
+  </div>
+</main>
+
+<script>
+  // Mirrors front-end/src/App.tsx: try checkout, fall back to a free scan so a dead payment
+  // provider cannot block the product (docs/RUNBOOK.md cut order).
+  const form = document.getElementById("start");
+  const note = document.getElementById("note");
+  const button = form.querySelector("button");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const url = document.getElementById("url").value.trim();
+    if (!url) return;
+
+    button.disabled = true;
+    note.textContent = "Starting your scan…";
+
+    const post = (path) =>
+      fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+
+    try {
+      const checkout = await post("/api/checkout");
+      const paid = await checkout.json().catch(() => ({}));
+      if (checkout.ok && paid.checkout_url) {
+        window.location.href = paid.checkout_url;
+        return;
+      }
+      if (checkout.status === 400 && paid.detail) {
+        note.textContent = paid.detail;
+        button.disabled = false;
+        return;
+      }
+
+      const scan = await post("/api/scan");
+      const data = await scan.json().catch(() => ({}));
+      if (!scan.ok) {
+        note.textContent = data.detail || "Could not start the scan.";
+        button.disabled = false;
+        return;
+      }
+      window.location.href = "/report/" + data.scan_id;
+    } catch (error) {
+      note.textContent = "Could not reach the server.";
+      button.disabled = false;
+    }
+  });
+</script>
+{% endblock %}

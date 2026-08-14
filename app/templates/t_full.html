@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}This round is full{% endblock %}
+{% block shell_class %}shell--narrow{% endblock %}
+
+{% block content %}
+<main>
+  <h1>This round is already full.</h1>
+  <div class="notice" style="margin: 1.5rem 0">
+    Every slot for round {{ round }} has been claimed, so there is no work left to assign.
+    Nothing has gone wrong on your side.
+  </div>
+  <p class="muted">Please return to Terac — the task should no longer be listed.</p>
+</main>
+{% endblock %}

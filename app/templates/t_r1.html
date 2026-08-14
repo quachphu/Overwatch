@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Did this website actually fail?{% endblock %}
+{% block shell_class %}shell--narrow{% endblock %}
+
+{#  Round 1 — verification.
+    docs/DECISIONS.md 003: participants judge an evidence bundle, never the live app. That
+    is what takes this from a ~15 minute task to a 3 minute one and makes it behave
+    identically on a phone and a laptop.
+
+    The participant id is rendered into a hidden field on every submission. Without it a
+    submission cannot be joined to the finding it judged (SPECS.md §5.5).
+#}
+
+{% block content %}
+<main>
+  <p class="eyebrow">Task · about 3 minutes</p>
+  <h1>Did this website actually fail?</h1>
+  <p class="lede">
+    An automated test explored a public website and flagged {{ n }} possible problems. For
+    each one you will see what the test expected, what it saw instead, and two screenshots.
+    Tell us whether it looks like a genuine failure — and how much it would bother a real
+    user.
+  </p>
+
+  <div class="notice" style="margin: 1.25rem 0 1.75rem">
+    There are no right answers we are checking you against. If something is unclear from the
+    evidence, say so — <strong>&ldquo;can't tell&rdquo; is a genuinely useful answer</strong>
+    and picking it costs you nothing.
+  </div>
+
+  <form method="post" action="/t/r1/{{ scan_id }}" id="r1">
+    <input type="hidden" name="participant_id" value="{{ participant_id }}" />
+
+    {% for f in findings %}
+    <section class="card" style="margin-bottom: 1.25rem">
+      <div class="card__head">
+        <span class="badge badge--plain">{{ loop.index }} of {{ n }}</span>
+        <h2 style="font-size: 1.125rem">{{ f.journey }}</h2>
+      </div>
+
+      <dl class="evidence">
+        <div>
+          <dt>Tried to</dt>
+          <dd>{{ f.step_intent }}</dd>
+        </div>
+        <div>
+          <dt>Expected</dt>
+          <dd>{{ f.expected }}</dd>
+        </div>
+        <div>
+          <dt>Saw</dt>
+          <dd>{{ f.observed }}</dd>
+        </div>
+      </dl>
+
+      {% if f.before or f.after %}
+      <div class="shots" style="margin-top: 1rem">
+        {% if f.before %}
+        <figure class="shot" style="margin: 0">
+          <img src="{{ f.before }}" alt="The page before the action" loading="lazy" />
+          <figcaption>Before</figcaption>
+        </figure>
+        {% endif %}
+        {% if f.after %}
+        <figure class="shot" style="margin: 0">
+          <img src="{{ f.after }}" alt="The page after the action" loading="lazy" />
+          <figcaption>After</figcaption>
+        </figure>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {#  Verbatim, not paraphrased. SPECS.md §6 asks for the console error exactly as
+          emitted: a participant who recognises "500" is giving us signal that a summary
+          would have destroyed. #}
+      {% if f.failed_requests or f.console_errors %}
+      <details style="margin-top: 1rem">
+        <summary class="muted" style="cursor: pointer; font-size: 0.875rem">
+          Technical detail from the browser (optional)
+        </summary>
+        <pre class="console" style="margin-top: 0.625rem">
+{%- for r in f.failed_requests %}{{ r }}
+{% endfor %}{% for c in f.console_errors %}{{ c }}
+{% endfor %}</pre>
+      </details>
+      {% endif %}
+
+      <hr style="border: 0; border-top: 1px solid var(--hairline-soft); margin: 1.25rem 0" />
+
+      <fieldset style="border: 0; padding: 0; margin: 0 0 1.25rem">
+        <legend style="padding: 0; margin-bottom: 0.625rem; font-weight: 500">
+          Does this look like a real failure?
+        </legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="is_real_{{ f.id }}" value="clear_yes" required />
+            Yes — clearly broken
+          </label>
+          <label class="choice">
+            <input type="radio" name="is_real_{{ f.id }}" value="probably" />
+            Probably broken
+          </label>
+          <label class="choice">
+            <input type="radio" name="is_real_{{ f.id }}" value="no" />
+            No — this looks fine
+          </label>
+          <label class="choice">
+            <input type="radio" name="is_real_{{ f.id }}" value="cant_tell" />
+            Can't tell from this evidence
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset style="border: 0; padding: 0; margin: 0">
+        <legend style="padding: 0; margin-bottom: 0.625rem; font-weight: 500">
+          If it is real, how much would it bother a user?
+        </legend>
+        <div class="choices choices--inline">
+          {% for value, hint in [(1, 'Barely'), (2, 'Slightly'), (3, 'Somewhat'), (4, 'A lot'), (5, 'Blocked')] %}
+          <label class="choice" style="flex-direction: column; gap: 0.125rem">
+            <input type="radio" name="severity_{{ f.id }}" value="{{ value }}" required />
+            <strong>{{ value }}</strong>
+            <span style="font-size: 0.6875rem" class="muted">{{ hint }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <label class="field" style="margin-top: 1.25rem">
+        <span>Anything worth adding? (optional)</span>
+        <input type="text" name="note_{{ f.id }}" maxlength="200" placeholder="One line is plenty" />
+      </label>
+    </section>
+    {% endfor %}
+
+    <div class="sticky-actions">
+      <button class="btn btn--lg btn--block" type="submit">Submit all {{ n }} answers</button>
+      <p class="muted" style="text-align: center; font-size: 0.75rem; margin: 0.625rem 0 0">
+        Answering as participant <span class="mono">{{ participant_id[:12] }}</span>
+      </p>
+    </div>
+  </form>
+</main>
+{% endblock %}

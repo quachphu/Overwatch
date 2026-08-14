@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Missing participant id{% endblock %}
+{% block shell_class %}shell--narrow{% endblock %}
+
+{#  Deliberately a stop, not a fallback.
+
+    SPECS.md §5.5: the task page must persist the participant id before rendering anything.
+    Rendering the task anyway would collect answers we can never join to a Terac submission,
+    which quietly corrupts the dataset instead of loudly failing. A hard stop here is
+    recoverable; a poisoned dataset at 17:30 is not.
+#}
+
+{% block content %}
+<main>
+  <h1>This link is missing something.</h1>
+  <div class="notice notice--warn" style="margin: 1.5rem 0">
+    We could not read a participant id from this link, so we cannot credit your work for
+    round {{ round }}. Please return to Terac and open the task from there rather than from a
+    saved or shared link.
+  </div>
+  <p class="muted">
+    If you arrived here directly from Terac and still see this, the task is misconfigured on
+    our side and you should not spend time on it.
+  </p>
+</main>
+{% endblock %}

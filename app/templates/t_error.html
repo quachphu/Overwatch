@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}We could not record that{% endblock %}
+{% block shell_class %}shell--narrow{% endblock %}
+
+{% block content %}
+<main>
+  <h1>We could not record your answers.</h1>
+  <div class="notice notice--warn" style="margin: 1.5rem 0">
+    Something is wrong on our side, not yours. We will not show you a thank-you page for work
+    we failed to store.
+  </div>
+  <p>
+    Please do not resubmit. Return to Terac and message us on the task, quoting the reference
+    below. We will make sure you are paid for the time you already spent.
+  </p>
+  <p class="muted mono" style="margin-top: 1.5rem">
+    round {{ round }} &middot; {{ scan_id }} &middot; {{ participant_id }}
+  </p>
+</main>
+{% endblock %}

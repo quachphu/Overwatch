@@ -1,0 +1,30 @@
+# Secrets. docs/AGENTS.md: agent_config.yaml holds five Band agent ids and keys, and each key
+# is shown exactly once at registration — losing it means re-registering the agent.
+agent_config.yaml
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local database
+*.db
+*.sqlite3
+
+# Evidence screenshots are large, regenerable, and can contain a customer's page contents.
+evidence/
+
+# Node
+node_modules/
+front-end/dist/
+
+# OS / editor
+.DS_Store
+*.swp

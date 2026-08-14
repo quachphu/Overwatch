@@ -1,0 +1,40 @@
+{# Shared shell. Kept minimal on purpose: the task pages are the only thing standing
+   between us and an unusable dataset, so they carry one stylesheet, no JS framework, and
+   no third-party script. #}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Overwatch{% endblock %}</title>
+    <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="noindex" />
+    <link rel="stylesheet" href="/static/overwatch.css" />
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    {% macro logo() -%}
+    {# Exact mark from front-end/design_prompt.md, 24x24 viewBox 0 0 256 256. #}
+    <svg viewBox="0 0 256 256" aria-hidden="true">
+      <path
+        d="M 128 128 C 128 198.692 70.692 256 0 256 C 0 185.308 57.308 128 128 128 Z M 128 128 C 198.692 128 256 185.308 256 256 C 185.308 256 128 198.692 128 128 Z M 0 0 C 70.692 0 128 57.308 128 128 C 57.308 128 0 70.692 0 0 Z M 256 0 C 256 70.692 198.692 128 128 128 C 128 57.308 185.308 0 256 0 Z"
+      />
+    </svg>
+    {%- endmacro %}
+
+    <div class="shell {% block shell_class %}{% endblock %}">
+      <header class="topbar">
+        <a class="brand" href="/">{{ logo() }} <span>overwatch</span></a>
+        {% block nav %}{% endblock %}
+      </header>
+
+      {% block content %}{% endblock %}
+
+      <footer class="page-foot">
+        {% block footer %}
+        Overwatch — automated QA, verified by humans hired per job through Terac.
+        {% endblock %}
+      </footer>
+    </div>
+  </body>
+</html>

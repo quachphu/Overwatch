@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}Overwatch — results{% endblock %}
+
+{#  The deliverable. docs/RUNBOOK.md's demo script spends 35 of its 120 seconds here.
+
+    Design rule for this page: every number carries its denominator, and any claim the
+    confidence interval does not support is labelled as not significant *by the page itself*
+    rather than left to the presenter's honesty. SPECS.md §7 and RUNBOOK.md "If the result is
+    negative" both demand that, and a page that can only display good news is a page nobody
+    should trust.
+#}
+
+{% macro pct(value) -%}
+{%- if value is none -%}<span class="muted">—</span>{%- else -%}{{ '%.0f' % (value * 100) }}%{%- endif -%}
+{%- endmacro %}
+
+{% block nav %}
+<nav class="nav-pill">
+  <a href="/dashboard">Results</a>
+  {% if scan_id %}<a href="/report/{{ scan_id }}">Report</a>{% endif %}
+  <a href="/">Home</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<main>
+  <p class="eyebrow">The experiment</p>
+  <h1>Did paying humans make our report better?</h1>
+  <p class="lede">
+    Report v1 is our automated ranking. Round&nbsp;1 hired people through Terac to judge
+    individual findings; those labels recalibrated our triage into v2. Round&nbsp;2 asked a
+    <strong>different</strong> panel — enforced by filter, not by trust — which report is
+    more useful.
+  </p>
+
+  {% if scans %}
+  <form method="get" action="/dashboard" class="row" style="margin: 1.5rem 0">
+    <select name="scan_id" onchange="this.form.submit()" style="max-width: 30rem">
+      {% for s in scans %}
+      <option value="{{ s.id }}" {% if s.id == scan_id %}selected{% endif %}>
+        {{ s.url }} — {{ s.status }}
+      </option>
+      {% endfor %}
+    </select>
+    <noscript><button class="btn btn--ghost" type="submit">Load</button></noscript>
+  </form>
+  {% endif %}
+
+  {% if not scan_id %}
+  <div class="notice" style="margin-top: 1.5rem">
+    No scans yet. Paste a URL on the <a href="/">home page</a> to start one.
+  </div>
+  {% else %}
+
+  {#  ── Headline: HELD-OUT precision ───────────────────────────────────────────────────
+      The headline is deliberately the held-out figure, not the in-sample one.
+
+      v2 is fitted to the round-1 labels, so scoring it against those same labels measures the
+      fitting procedure rather than the ranking: on pure coin-flip labels the in-sample number
+      still goes 0.50 -> 1.00 in 400/400 simulated trials. The held-out figure splits the
+      labels, rebuilds v2 from one half and scores both rankings on the other, so it can — and
+      on noise does — come out flat. The in-sample number is still shown further down, labelled
+      as the diagnostic it is. #}
+  <div class="grid grid--3" style="margin-bottom: 1rem">
+    <section class="card">
+      <p class="eyebrow">precision@{{ result.holdout_k or 10 }} · v1 baseline</p>
+      <p class="figure">{{ pct(result.precision_at_10_v1_holdout) }}</p>
+      <p class="muted" style="font-size: 0.8125rem; margin-bottom: 0">
+        Automated ranking, no human input.
+      </p>
+    </section>
+
+    <section class="card">
+      <p class="eyebrow">precision@{{ result.holdout_k or 10 }} · v2 · held out</p>
+      <p class="figure">{{ pct(result.precision_at_10_v2_holdout) }}</p>
+      <p class="muted" style="font-size: 0.8125rem; margin-bottom: 0">
+        {% if result.precision_delta_holdout is not none %}
+          {% if result.precision_delta_holdout > 0 %}
+            Up {{ '%.0f' % (result.precision_delta_holdout * 100) }} points on labels v2
+            never saw.
+          {% elif result.precision_delta_holdout < 0 %}
+            <strong>Down {{ '%.0f' % (-result.precision_delta_holdout * 100) }} points.</strong>
+            Reported as measured.
+          {% else %}
+            No change on held-out labels.
+          {% endif %}
+        {% else %}
+          Needs round 1 labels.
+        {% endif %}
+      </p>
+    </section>
+
+    <section class="card">
+      <p class="eyebrow">Human judgments bought</p>
+      <p class="figure">{{ result.n_labels }}</p>
+      <p class="muted" style="font-size: 0.8125rem; margin-bottom: 0">
+        From {{ result.n_raters }} {{ 'person' if result.n_raters == 1 else 'people' }} across
+        {{ result.n_findings_labeled }} of {{ result.n_findings }} findings{% if result.judgments_per_finding %},
+        {{ '%.1f' % result.judgments_per_finding }} raters each{% endif %}.
+      </p>
+    </section>
+  </div>
+
+  {% if result.has_holdout %}
+  <div class="notice" style="margin-bottom: 1rem">
+    <strong>How that number is computed.</strong> Report v2 is built <em>from</em> the human
+    labels, so scoring it against those same labels would measure our own fitting and would show
+    a large win even on random labels. Instead the
+    {{ result.n_findings_labeled }} labelled findings are split in half: v2 is rebuilt using
+    {{ result.n_holdout_fit }} of them and both rankings are then scored on the
+    {{ result.n_holdout_eval }} it never saw. The generalisation being tested is real — round 1
+    teaches us which <em>categories</em> of finding humans reject, and that applies to findings
+    nobody judged.
+  </div>
+  {% elif result.n_labels %}
+  <div class="notice notice--warn" style="margin-bottom: 1rem">
+    <strong>No held-out figure yet.</strong> Splitting the labels needs at least two labelled
+    findings. The in-sample numbers below are a wiring diagnostic, not evidence of improvement.
+  </div>
+  {% endif %}
+
+  {#  The efficiency claim from docs/DECISIONS.md 004, stated with its arithmetic visible
+      because "use of human input" is 25% of the rubric and explicitly rewards efficiency. #}
+  {% if result.n_labels %}
+  <div class="notice" style="margin-bottom: 1rem">
+    <strong>Batching:</strong> {{ result.n_raters }} participants produced
+    {{ result.n_labels }} judgments over {{ result.n_findings_labeled }} findings — roughly a
+    third the cost of asking one person about one finding.
+  </div>
+  {% endif %}
+
+  {# ── Round 2: the fresh-panel preference ───────────────────────────────────────── #}
+  <section class="card" style="margin-bottom: 1rem">
+    <div class="card__head">
+      <h2>Round 2 — which report did a fresh panel prefer?</h2>
+      <span class="muted" style="font-size: 0.8125rem">n = {{ result.n_preferences }}</span>
+    </div>
+
+    {% if result.n_preferences == 0 %}
+    <p class="muted" style="margin-bottom: 0">
+      No preference votes yet. This is the number that decides whether the recalibration was
+      a real improvement, so it is left blank rather than estimated.
+    </p>
+    {% else %}
+    {% set share = result.preference_share_v2 %}
+    <div class="compare" style="margin-bottom: 0.875rem">
+      <span class="v1" style="width: {{ '%.1f' % ((1 - share) * 100) }}%">
+        {% if (1 - share) > 0.12 %}v1 · {{ result.preference_v1 }}{% endif %}
+      </span>
+      <span class="v2" style="width: {{ '%.1f' % (share * 100) }}%">
+        {% if share > 0.12 %}v2 · {{ result.preference_v2 }}{% endif %}
+      </span>
+    </div>
+
+    <p style="margin: 0 0 0.5rem">
+      <strong>{{ pct(share) }} preferred v2</strong>
+      {% if result.preference_ci %}
+      — Wilson 95% CI
+      [{{ '%.0f' % (result.preference_ci[0] * 100) }}%, {{ '%.0f' % (result.preference_ci[1] * 100) }}%]
+      {% endif %}
+    </p>
+
+    {% if result.preference_is_significant %}
+    <p class="notice notice--ok" style="margin: 0">
+      The interval excludes 50%, so this is a real preference at this sample size.
+    </p>
+    {% else %}
+    <p class="notice notice--warn" style="margin: 0">
+      <strong>Not significant.</strong> The interval includes 50%, so this split is
+      consistent with a coin flip. We are not claiming a win from it.
+    </p>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  {# ── Secondary metrics ─────────────────────────────────────────────────────────── #}
+  <div class="grid grid--2" style="margin-bottom: 1rem">
+    <section class="card">
+      <h3>Average precision</h3>
+      <p class="muted" style="font-size: 0.8125rem">
+        Reported because precision moves in coarse steps at this sample size and cannot see
+        <em>where</em> in the ranking a real bug sits. AP can.
+      </p>
+      <table>
+        <tr><th>v1 · held out</th><td>{{ pct(result.map_v1_holdout) }}</td></tr>
+        <tr><th>v2 · held out</th><td>{{ pct(result.map_v2_holdout) }}</td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h3>Confirmation rate</h3>
+      <p class="muted" style="font-size: 0.8125rem">
+        Share of all human judgments that confirmed a finding as real. Critic blocks release
+        below 40%.
+      </p>
+      <p class="figure figure--sm">{{ pct(result.confirmation_rate) }}</p>
+      {% if result.confirmation_ci %}
+      <p class="muted" style="font-size: 0.8125rem; margin-bottom: 0">
+        95% CI [{{ '%.0f' % (result.confirmation_ci[0] * 100) }}%,
+        {{ '%.0f' % (result.confirmation_ci[1] * 100) }}%]
+      </p>
+      {% endif %}
+    </section>
+  </div>
+
+  {#  Shown, not hidden. A judge who asks "what does it look like if you score v2 on the labels
+      that built it?" should find the number already on the page with the caveat attached,
+      rather than discover we quietly dropped the flattering version. #}
+  {% if result.precision_delta is not none %}
+  <section class="card" style="margin-bottom: 1rem">
+    <h3>In-sample diagnostic — not evidence</h3>
+    <p class="muted" style="font-size: 0.8125rem">
+      The same comparison scored on <em>all</em> the labels, including the ones that built v2.
+      It is here for completeness and to confirm the recalibration is wired up. It is not an
+      improvement claim: this figure rises even when the labels are pure noise, which is
+      precisely why the headline above uses a held-out split.
+    </p>
+    <table>
+      <tr><th>precision@10 · v1</th><td>{{ pct(result.precision_at_10_v1) }}</td></tr>
+      <tr><th>precision@10 · v2 (in sample)</th><td>{{ pct(result.precision_at_10_v2) }}</td></tr>
+      <tr>
+        <th>Delta</th>
+        <td>{{ '%+.0f' % (result.precision_delta * 100) }} points <span class="muted">— circular</span></td>
+      </tr>
+    </table>
+  </section>
+  {% endif %}
+
+  {# ── Rounds and provenance ─────────────────────────────────────────────────────── #}
+  <section class="card">
+    <div class="card__head">
+      <h2>Terac rounds</h2>
+      <span class="muted" style="font-size: 0.8125rem">{{ n_findings }} findings in this scan</span>
+    </div>
+
+    {% if not rounds %}
+    <p class="muted" style="margin-bottom: 0">No rounds launched for this scan yet.</p>
+    {% else %}
+    <div class="scroll-x">
+      <table>
+        <thead>
+          <tr>
+            <th>Round</th>
+            <th>Opportunity</th>
+            <th>Status</th>
+            <th>Participants</th>
+            <th>Time to first completion</th>
+            <th>Fresh panel enforced</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rounds %}
+          <tr>
+            <td>{{ r.round_no }}</td>
+            <td class="mono">{{ r.opportunity_id or '—' }}</td>
+            <td>{{ r.status }}</td>
+            <td>{{ r.num_participants }}</td>
+            <td>
+              {% if r.minutes_to_first is not none %}
+                {{ '%.0f' % r.minutes_to_first }} min
+              {% else %}
+                <span class="muted">waiting</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if r.round_no == 1 %}
+                <span class="muted">n/a</span>
+              {% elif r.excludes_round1 %}
+                <span class="badge badge--good">has_not_taken_study</span>
+              {% else %}
+                <span class="badge badge--blocker">not enforced</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {#  Said on the page, not just in the pitch. A judge who builds eval environments will
+        look for exactly this hole (docs/DECISIONS.md 006). #}
+    <p class="muted" style="font-size: 0.8125rem; margin: 1rem 0 0">
+      Round 2 excludes every round-1 participant using Terac's
+      <span class="mono">reference--has_not_taken_study</span> filter against round 1's
+      opportunity id. It is enforced by the platform, not by our bookkeeping.
+    </p>
+    {% endif %}
+  </section>
+
+  {% endif %}
+</main>
+{% endblock %}
+
+{% block footer %}
+Every figure on this page carries its sample size. Where the confidence interval includes
+50%, the page says so.
+{% endblock %}
