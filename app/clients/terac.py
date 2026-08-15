@@ -675,12 +675,15 @@ def build_round2_payload(
 def participant_task_url(base_url: str, path: str) -> str:
     """Build a `task_url` carrying Terac's participant placeholder.
 
-    SPECS.md §5.5: without `{{participant_id}}` in the URL there is no way to join a Terac
+    SPECS.md §5.5: without a real participant id in the URL there is no way to join a Terac
     submission to the labels it produced, and the dataset is unusable. The task page
     persists it before rendering anything.
 
-    # UNKNOWN 12: that Terac substitutes `{{participant_id}}` here is inferred from
-    # SPECS.md and from the read-back field `participant_url_template` on the opportunity
-    # response. Confirm by reading the create response in scripts/probe_terac.py.
+    UNKNOWN 12 resolved live and the wrong way, 2026-08-15 (RESEARCH.md §13.26): this used to
+    emit `{{participant_id}}` (double-brace), inferred rather than confirmed. A real round-1
+    participant's actual request came back as `...?pid=%7B%7Bparticipant_id%7D%7D` — Terac
+    never substituted it — while the *same* URL's `{submissionId}` and `{taskId}` (single-brace,
+    read back verbatim on `participant_url_template`) were substituted correctly. Terac's
+    placeholder syntax is single-brace, matching every other field it substitutes.
     """
-    return f"{base_url.rstrip('/')}{path}?pid={{{{participant_id}}}}"
+    return f"{base_url.rstrip('/')}{path}?pid={{participant_id}}"

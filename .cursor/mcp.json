@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "terac": {
+      "url": "https://terac.com/api/mcp",
+      "headers": {
+        "x-api-key": "${env:TERAC_API_KEY}"
+      }
+    }
+  }
+}

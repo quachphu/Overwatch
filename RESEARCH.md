@@ -1475,3 +1475,83 @@ Attempted to `PATCH` the copy onto the *already-launched* round-1 opportunity
 `409 CONFLICT {"message": "Only draft opportunities can be updated"}` — not documented in the
 spec, only discoverable by trying. A launched opportunity's copy is frozen at launch time; the
 richer copy takes effect starting with round 2's launch, not retroactively on round 1.
+
+### 13.26 UNKNOWN 12 resolved live, and resolved wrong: `{{participant_id}}` was never substituted
+
+`participant_task_url()` emitted the participant placeholder as `{{participant_id}}`
+(double-brace), flagged in its own docstring as inferred from SPECS.md, never confirmed against
+a real substituted response. It shipped that way into round 1's live launch.
+
+The real round-1 opportunity produced one genuine completion. Its request line, read straight out
+of the server log, settles UNKNOWN 12 the other way:
+
+```
+GET /t/r1/scan_ea48ba875138?pid=%7B%7Bparticipant_id%7D%7D&submissionId=nzkwv8tns1rmgp73nwknbzm8&teracSubmissionId=nzkwv8tns1rmgp73nwknbzm8&taskId=rruoezpwtzibpj6757h2s8zy
+```
+
+`%7B%7Bparticipant_id%7D%7D` decodes to `{{participant_id}}` — carried through completely
+literally. In the same URL, on the same request, `{submissionId}` and `{taskId}` — both
+single-brace — came back correctly substituted with real values. Terac's placeholder syntax is
+single-brace, matching every other field it substitutes; double-brace is simply never recognized
+and passed through as-is. Fixed in `participant_task_url()` to emit `{participant_id}`.
+
+This one bug produced two further, more serious problems, both traced and both fixed:
+
+1. **The one real completion had every label's `participant_id` recorded as the literal string
+   `{{participant_id}}`.** `TeracSubmission.participant_id` (`GET /submissions/{id}` via
+   `get_submission`) is a UUID (`33b5a995-fb5d-48d7-8915-5cd4d9d8addc` here) and is **not** the
+   same value as the submission id in the URL (`nzkwv8tns1rmgp73nwknbzm8`) — confirmed by fetching
+   both and comparing, not assumed. Corrected the 3 affected `Label` rows in place to the real
+   participant id rather than deleting genuine human judgments. Then approved the underlying
+   Terac submission (`approve_submission`, confirmed `status: "approved"`) so the participant who
+   did real work is actually paid — nothing in this codebase called `approve_submission` before
+   this, at all, so every prior "awaiting_review" submission would have sat unpaid indefinitely.
+2. **Round 1 is live and cannot be patched (§13.25) — every remaining round-1 participant hits the
+   same broken placeholder**, since the fix only reaches opportunities created after it. Rather
+   than accept ongoing manual DB correction per participant, `task_r1`/`task_r2` now resolve `pid`
+   through `_resolve_pid()`: if `pid` arrives as the literal, unsubstituted placeholder, it looks
+   up the real participant id from `submissionId`/`teracSubmissionId` (which *do* substitute
+   correctly) via `get_submission()` before claiming a slot. Round 2 launches after this fix, so
+   its participants never hit the bug in the first place; the fallback exists only to self-heal
+   round 1's remaining traffic.
+
+### 13.27 `launch_round2`'s round-1 lookup could silently block on a stale row
+
+Separately, `scan_ea48ba875138` had **two** `round_no=1` rows: the real launched one
+(`opportunity_id=yzip744iby8rpnshn3o4a67e`) and a stale row with `opportunity_id=None` — a dead
+attempt from earlier testing that was never cleaned up. `launch_round2`'s lookup for the
+round-1-exclusion filter was `select(Round).where(scan_id=..., round_no=1).first()`, unfiltered —
+on this scan it would have returned the stale row, read `opportunity_id` as `None`, and raised
+`RuntimeError("BLOCKED: cannot exclude round 1 participants")`, refusing to launch round 2 even
+though round 1 is live. Caught by inspecting the `Round` table directly before calling
+`launch_round2`, not by the function itself. Fixed by reusing `_launched_round()` — already
+filters `Round.opportunity_id.is_not(None)` and is exactly the idempotency check `launch_round1`
+uses for itself — instead of a second, unfiltered, ad-hoc query.
+
+### 13.28 Round 2 launched: 6 participants, live balance the binding constraint, not §13.24's $210 estimate
+
+§13.24 sized round 2 off `.env`'s `R2_PARTICIPANTS=35` and a $29 balance and called it blocked.
+Balance was live-rechecked before actually launching (this section) and read $41 — $12 higher than
+§13.24's figure, matching almost exactly one of the two duplicate opportunities' cost (2 × $6). Both
+duplicates were already recorded as non-refundable at launch time in §13.24; whether stopping one
+actually returned $12 or something else moved the balance in the meantime was not isolated, and is
+left as an open, unresolved discrepancy rather than asserted either way.
+
+Sized round 2 to the confirmed live number rather than either the stale $29 or an assumed rate: created
+the round-2 opportunity as a **draft** (free, per the spec — only `/launch` charges) at 6
+participants, read back its own `pricing` field before touching `/launch` (`cost_per_participant_cents:
+600, total_cost_cents: 3600` — $36.00, matching round 1's real rate, not the generic `/quotes`
+estimate of $7.57/participant obtained earlier from a panel/task description that does not match
+this exact configured task), confirmed $36 fits the $41 balance, then launched. `org_context()`
+immediately after: balance **$5.00** — exactly $41 − $36. Opportunity id `ye4m5705ayu6w1dk3117bc0v`,
+correctly carrying the round-1 exclusion filter and the corrected single-brace `task_url`.
+
+Reported honestly, not glossed over: round 2's v2 report was built (`build_v2`) from round 1's
+**one** completed, verified label triple — 1 of the 12 people hired for round 1 — because that is
+the only real human data that existed at launch time, and waiting for the rest of the round-1
+panel risked missing the round-2 completion window before the submission deadline. `evaluate()`'s
+held-out figure on this run should be read as a thin-sample result, not the full-panel one; if more
+round-1 participants complete before the deadline, `build_v2` can be re-run and, if round 2 has not
+yet collected enough votes to matter, relaunched — otherwise the honest thing is to report the
+number that shipped, not a better one computed after the fact from data round 2's actual
+participants never saw.

@@ -578,11 +578,12 @@ async def launch_round2(scan_id: str, *, num_participants: int | None = None) ->
         )
         return existing
 
-    with session_scope() as session:
-        round1 = session.scalars(
-            select(Round).where(Round.scan_id == scan_id, Round.round_no == 1)
-        ).first()
-        round1_opportunity_id = round1.opportunity_id if round1 else None
+    # `_launched_round`, not a plain `.first()`: a dead run that inserted a `Round` row and
+    # died before setting `opportunity_id` (or a stale manual test row) leaves more than one
+    # round-1 row for this scan, and an unfiltered query can return the empty one — which
+    # silently blocks round 2 with "no opportunity id" even though round 1 is live.
+    round1 = _launched_round(scan_id, 1)
+    round1_opportunity_id = round1["opportunity_id"] if round1 else None
 
     if not round1_opportunity_id:
         raise RuntimeError(

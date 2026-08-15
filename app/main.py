@@ -449,8 +449,49 @@ def task_smoke(request: Request, pid: str | None = None) -> Any:
     )
 
 
+_UNSUBSTITUTED_PID = {"{participant_id}", "{{participant_id}}"}
+
+
+async def _resolve_pid(request: Request, pid: str | None) -> str | None:
+    """Recover a real participant id when Terac left the placeholder unsubstituted.
+
+    RESEARCH.md §13.26: the round-1 opportunity was launched with the double-brace
+    placeholder (`{{participant_id}}`), which Terac never substitutes — `pid` arrives on
+    the wire as the literal string. That opportunity is live and cannot be patched (409 on
+    active opportunities), so every remaining round-1 participant still hits this. Terac
+    *does* substitute `{submissionId}`/`{teracSubmissionId}` on the same URL correctly, so
+    fall back to resolving the real participant id through that submission id rather than
+    guessing or discarding the vote.
+    """
+    if pid and pid not in _UNSUBSTITUTED_PID:
+        return pid
+
+    submission_id = request.query_params.get("submissionId") or request.query_params.get(
+        "teracSubmissionId"
+    )
+    if not submission_id:
+        return None
+
+    try:
+        async with TeracClient() as terac:
+            submission = await terac.get_submission(submission_id)
+    except Exception:
+        logger.exception(
+            "Could not resolve participant id from submission %s (pid arrived unsubstituted).",
+            submission_id,
+        )
+        return None
+
+    logger.warning(
+        "Recovered participant id %s from submission %s after an unsubstituted pid placeholder.",
+        submission.participant_id,
+        submission_id,
+    )
+    return submission.participant_id
+
+
 @app.get("/t/r1/{scan_id}", response_class=HTMLResponse)
-def task_r1(request: Request, scan_id: str, pid: str | None = None) -> Any:
+async def task_r1(request: Request, scan_id: str, pid: str | None = None) -> Any:
     """Round 1 — verification.
 
     SPECS.md §5.5: the participant id must be captured **before rendering anything**. If it
@@ -460,6 +501,7 @@ def task_r1(request: Request, scan_id: str, pid: str | None = None) -> Any:
     SPECS.md §6 / docs/DECISIONS.md 003: participants see evidence bundles only. They are
     never given live access to the app under test.
     """
+    pid = await _resolve_pid(request, pid)
     if not pid:
         return templates.TemplateResponse(request, "t_no_pid.html", {"round": 1}, status_code=400)
 
@@ -611,8 +653,9 @@ async def task_r1_submit(request: Request, scan_id: str) -> Any:
 
 
 @app.get("/t/r2/{scan_id}", response_class=HTMLResponse)
-def task_r2(request: Request, scan_id: str, pid: str | None = None) -> Any:
+async def task_r2(request: Request, scan_id: str, pid: str | None = None) -> Any:
     """Round 2 — forced-choice comparison of v1 vs v2, side randomized per participant."""
+    pid = await _resolve_pid(request, pid)
     if not pid:
         return templates.TemplateResponse(request, "t_no_pid.html", {"round": 2}, status_code=400)
 

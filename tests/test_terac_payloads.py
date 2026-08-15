@@ -27,7 +27,7 @@ from app.clients.terac import (
 def round1():
     return build_round1_payload(
         project_id="proj_123",
-        task_url="https://overwatch.example/t/r1/scan_1?pid={{participant_id}}",
+        task_url="https://overwatch.example/t/r1/scan_1?pid={participant_id}",
         num_participants=12,
         n_findings=20,
         findings_per_participant=5,
@@ -38,7 +38,7 @@ def round1():
 def round2():
     return build_round2_payload(
         project_id="proj_123",
-        task_url="https://overwatch.example/t/r2/scan_1?pid={{participant_id}}",
+        task_url="https://overwatch.example/t/r2/scan_1?pid={participant_id}",
         num_participants=35,
         round1_opportunity_id="opp_round1",
     )
@@ -126,7 +126,7 @@ class TestRound1:
         assert rejects
 
     def test_carries_the_participant_placeholder(self, round1):
-        assert "{{participant_id}}" in round1["tasks"][0]["task_url"]
+        assert "{participant_id}" in round1["tasks"][0]["task_url"]
 
 
 class TestRound2:
@@ -162,9 +162,9 @@ class TestRound2:
 class TestParticipantTaskUrl:
     def test_embeds_the_placeholder(self):
         url = participant_task_url("https://overwatch.example", "/t/r1/scan_1")
-        assert url == "https://overwatch.example/t/r1/scan_1?pid={{participant_id}}"
+        assert url == "https://overwatch.example/t/r1/scan_1?pid={participant_id}"
 
     def test_tolerates_a_trailing_slash_on_the_base(self):
         assert participant_task_url("https://overwatch.example/", "/t/r1/s") == (
-            "https://overwatch.example/t/r1/s?pid={{participant_id}}"
+            "https://overwatch.example/t/r1/s?pid={participant_id}"
         )

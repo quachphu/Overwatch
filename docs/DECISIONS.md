@@ -261,3 +261,27 @@ in front of judges, at the cost of the revenue beat in the pitch. This was a liv
 integration when it was deleted — not a stub, not something that never worked — which is worth
 recording so a future read of the git history does not mistake "removed" for "never finished."
 Full detail of what existed and was verified live: RESEARCH.md §13.18–§13.22.
+
+---
+
+## 018 — Round 2 launched at 6 participants against the live balance, not the configured 35 (14:35)
+
+**Context:** `.env`'s `R2_PARTICIPANTS=35` was sized against an assumed budget, not a measured
+one. `org_context().balanceDollars`, rechecked live immediately before launch, read $41. Round 2's
+own draft (created free, inspected, then launched — RESEARCH.md §13.28) confirmed a real
+`$6.00/participant` rate for this exact task, not the generic `/quotes` estimate of $7.57 obtained
+from a different, unconfigured task/panel description.
+
+**Decision:** launch round 2 at `floor($41 / $6.00) = 6` participants ($36.00, leaving a $5.00
+buffer) rather than wait for a manual top-up before the submission deadline, and rather than trust
+either the stale $29 figure from an earlier check-in (RESEARCH.md §13.24) or the unrelated
+`/quotes` rate.
+
+**Consequence:** the measured, reported result comes from a 6-person fresh panel, smaller than the
+35 originally planned, and from a round-1 v2 report built off exactly one completed round-1 label
+triple (1 of the 12 people hired for round 1) because that was the only real human data that
+existed at launch time. Both numbers are reported as they are, not adjusted upward in the writeup —
+`CLAUDE.md` Rule 7. The two bugs this launch surfaced and fixed first (the `{{participant_id}}`
+placeholder never being substituted by Terac, and `launch_round2`'s unfiltered lookup that could
+have silently blocked on a stale `Round` row) are RESEARCH.md §13.26–§13.27; fixing them before
+launch is why round 2's participants get correctly attributed labels where round 1's did not.
