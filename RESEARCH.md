@@ -1226,3 +1226,252 @@ template; `report.html` shows a distinct "scan in progress" notice (with a `<met
 http-equiv="refresh" content="4">` so the page catches up on its own) while in progress, a
 distinct failure notice with the stored error when `status == "failed"`, and reserves the "clean
 app" message for a scan that has actually reached a terminal state with zero findings.
+
+### 13.15 Superserve's real API surface, verified live (2026-08-15, `superserve` 0.8.2)
+
+`app/clients/superserve.py` had never made a real call — Rule 1 correctly refused to invent a
+`create`/`exec`/`stop` shape. Introspecting the installed package and making one real call settles
+it: `AsyncSandbox.create(name=..., api_key=..., timeout_seconds=...)` returns a live sandbox
+(`id`, `name`, `status`); `sandbox.commands.run("<shell>")` executes and returns
+`CommandResult(stdout, stderr, exit_code, truncated)`; `sandbox.kill()` tears it down. Verified end
+to end: created a sandbox, ran `echo hello-from-superserve && uname -a` inside it, got real stdout
+back from a remote Linux box, killed it. `get_info()` also returns `vcpu_count`, `memory_mib`,
+`network`, `preview_access` — so port-forwarding a browser's remote-debugging port back out
+(`PreviewAccess`/`publish_preview_port`) is possible in principle, but wiring the scan pipeline to
+actually run Playwright *inside* the sandbox (install Chromium there, or use a template that has
+it, then proxy back) is unstarted and non-trivial — RUNBOOK.md's cut order puts Superserve behind
+Band and revenue for exactly this reason. Treat this section as "the API is real and callable," not
+"the scanner runs sandboxed."
+
+### 13.16 `multi_select--language` rejects bare `"en"` on a real launch (2026-08-15)
+
+First real `launch_round1` against the live org returned a 400 before this was caught anywhere in
+testing: `Invalid values for LANGUAGE: en. Allowed: en-US, es-ES, pt-BR, fr-FR, de-DE, it-IT,
+ja-JP, ko-KR, zh-CN, hi-IN, ru-RU, tr-TR, vi-VN, bn-BD, pa-IN, te-IN, mr-IN, ta-IN, ur-PK, jv-ID`.
+`build_round1_payload` and `build_round2_payload` both filtered on `{"multi_select--language":
+{"$in": ["en"]}}` — the filter slug expects full locale codes, not bare ISO-639 language codes.
+Fixed both call sites to `"en-US"`. Caught by making the real call rather than a mock; no amount
+of code review would have surfaced Terac's exact allowed-value list, which is not in the fetched
+docs and only appears in a live error body.
+
+### 13.17 `nohup ... & disown` did not survive between separate agent shell calls on macOS
+
+Every plain `nohup uvicorn ... & ; disown` reliably died the moment the spawning tool call ended,
+even though the identical pattern kept a long-lived `ngrok` agent alive across many calls. `ps`
+and `pkill` were both unusable for diagnosis (calling them aborted the whole invocation).
+Root cause was never fully isolated, but the fix that worked is a proper UNIX double-fork daemon
+(`scripts/daemonize_server.py`): fork, `os.setsid()` to leave the caller's session entirely, fork
+again, redirect fds, `execv` into uvicorn. `setsid` the *binary* does not exist on macOS (it is a
+Linux util-linux tool), hence doing it via `os.setsid()` in Python instead of `setsid nohup ...`.
+After this change the server answered `/healthz` from a subsequent, fully separate shell call —
+the same test that killed every earlier attempt.
+
+### 13.18 `WHOP_COMPANY_ID` in `.env` did not belong to `WHOP_API_KEY` (2026-08-15)
+
+A real checkout with the correct `account_id` field name and the correct `biz_` prefix still came
+back `400 parameter_missing: account_id` — the field was genuinely present in the outgoing body
+(verified by building the request and printing its raw bytes), so the field-name fix in
+`app/clients/whop.py` (RESEARCH.md §13.11) was not the problem. `GET /companies/me` (the
+"resolve the caller's own company" endpoint — `/me` and `/company` both 404) revealed why: the
+API key in `.env` resolves to `biz_mq2nWbR4AjIBlZ` ("Me"), not `biz_wK8cyC5BXFB8nS`, the id that
+was actually in `WHOP_COMPANY_ID`. Whop cannot resolve an `account_id` the calling key does not
+own, and reports that as "missing" rather than "forbidden." Fixed by setting
+`WHOP_COMPANY_ID=biz_mq2nWbR4AjIBlZ` — the id `/companies/me` actually returns for this key, not
+the id printed on a screenshot of a different page. Lesson: a `biz_…`/`acct_…`-shaped id looking
+plausible is not the same as it belonging to the key being used; verify ownership with
+`GET /companies/me` before trusting a pasted id.
+
+**Correction, same day, ~2h later:** `/companies/me` was the wrong lookup entirely — it is an
+unrelated default/legacy endpoint and returned `biz_mq2nWbR4AjIBlZ`, a company this key does not
+actually own. The right one, confirmed by finding the "Accounts" API tag in the docs index
+("retrieve the account associated with the current API key"), is `GET /accounts/me` — and it
+returned the *original* `.env` value, `biz_wK8cyC5BXFB8nS`. So the id was right from the start;
+§13.18's fix was itself a wrong diagnosis, now reverted.
+
+### 13.19 The real blocker was a header marked optional in the schema
+
+With the correct `account_id` confirmed, a raw request with exactly the documented body still
+400'd `parameter_missing: account_id` — proving the field name/value were never the issue. The
+OpenAPI spec lists `Api-Version-Date` (header, pinning the request to a dated schema version) as
+`required: false` on this endpoint. It is not, in effect: omitting it, the live API validates the
+request against an older dated version that does not recognize `account_id` as a request field at
+all, and reports the field the *current* schema expects as simply missing. Adding
+`Api-Version-Date: 2026-08-13` (the version the fetched spec itself declares, `info.x-api-version-date`)
+made the identical body succeed immediately — real checkout `ch_z0kZpgV455Lgjd4`,
+`purchase_url: https://whop.com/checkout/plan_9jjzK3taCHA8q/?session=ch_z0kZpgV455Lgjd4`. Fixed by
+sending this header on every Whop request (`WhopClient.__aenter__`), not just this one endpoint,
+since the same silent-version-fallback risk applies to any of them. Three separate wrong
+hypotheses (§13.11's field name, §13.18's id ownership, and only then this) were tried in order
+before the real cause surfaced — each ruled out by a real request, never by re-reading code.
+
+### 13.20 "This creator hasn't finished setting up their Whop account" on checkout — confirmed live
+
+A real checkout built from an **inline** `plan: {...}` (no pre-existing Whop product behind it)
+produced a working `purchase_url` from the API, but the checkout page itself showed "Uh oh! This
+creator hasn't finished setting up their Whop account" and refused to take payment. The account
+status API (`GET /accounts/me`) showed nothing wrong — `verification.individual: approved`,
+`required_actions: []`, `accept_card_payments: active` — so this is not a KYC gate the API
+surfaces; it is enforced only at the checkout page, on something the status endpoint doesn't list.
+
+Fix, confirmed live: create one real product + checkout link through the Whop **Dashboard**
+(exactly `docs.whop.com/payments/create-checkout-link` — the same doc that first looked like a
+dead end in §13.19's read, since it has no API surface of its own). That produced a real
+`plan_id` (`plan_mFD418WxfmEX9`) tied to a real product (`prod_dnwiSUUzQOeYv`, "QA service").
+Setting `WHOP_PLAN_ID` to that id required zero code changes — `WhopClient.create_checkout`
+already had the `if settings.whop_plan_id: payload["plan_id"] = ... else: <inline plan>` branch
+from day one; it had just never been exercised because the env var had always been empty. A
+checkout built against that real plan_id loaded clean, modal gone, confirmed by the user directly
+in-browser (a plain-text fetch of the checkout page can't detect a JS modal either way, so this
+had to be eyeballed, not just curled).
+
+Net effect: **inline ad-hoc plans are checkout-blocked on this account; a dashboard-created plan
+is not.** If revenue needs to go through before the demo, use a real `WHOP_PLAN_ID`, not the
+inline-plan fallback. The dashboard-created plan is currently `initial_price: 0.0` ("Free") by
+choice, so it's a real un-blocked checkout, not yet a real charge — deliberately left that way
+rather than pushed to a real card without being asked.
+
+### 13.21 A completed checkout landed on Whop's own "joined" page, not our report — two real gaps
+
+A user reported that after paying (§13.20's free plan), the browser landed on
+`whop.com/joined/<company>/?receipt_id=...` instead of anything in this app. Investigation found
+two independent, unrelated causes — fixing either alone would not have closed the loop:
+
+1. **No webhook subscription existed.** `grep -c "hooks/whop" <server log>` across the entire
+   session returned zero — Whop had never once attempted a delivery to `/hooks/whop`, for any
+   payment, ever. `docs.whop.com/developer/guides/webhooks` documents that a subscription is a
+   deliberate `POST /api/v1/webhooks {"url": ..., "events": [...]}` (dashboard or API) — nothing
+   creates one automatically from a checkout. Fixed with a one-shot
+   `scripts/register_whop_webhook.py`: real call, real response, `hook_lJjmzmi449wAB` now
+   subscribed to `payment.succeeded` at `{PUBLIC_BASE_URL}/hooks/whop`, secret captured into
+   `WHOP_WEBHOOK_SECRET` (shown exactly once on the create response, per docs — printed and copied
+   immediately, cannot be re-fetched). This also matters because `app/main.py`'s handler
+   deliberately 503s any Whop webhook when the secret is unset and the instance is public
+   (fail-closed by design, §"Known API gotchas") — so even a hypothetical delivery would have
+   bounced until this was set.
+2. **`create_checkout` never sent `redirect_url`.** The live `checkout_configurations` schema
+   (fetched `docs.whop.com/api-reference/beta/checkout-configurations/create-a-checkout-configuration`)
+   documents `redirect_url`: "URL customers are sent to after checkout" as a real, settable
+   top-level field — never wired. Without it Whop falls back to its own post-purchase community
+   page. Fixed: `WhopClient.create_checkout(..., redirect_url=...)`, called from `/api/checkout`
+   with `f"{PUBLIC_BASE_URL}/order/{order_id}"`. Verified live by fetching the created checkout
+   configuration back (`GET /checkout_configurations/{id}`) and confirming
+   `"redirect_url": "https://.../order/ord_..."` in the real response, not just in what we sent.
+
+A new `/order/{order_id}` route + `order_status.html` exist because the scan does not exist yet at
+redirect time — `pipeline.create_scan` only runs inside `_process_whop_event`, after the webhook
+lands, which can be a few seconds after the browser redirect. The page redirects straight to
+`/report/{scan_id}` once `Order.scan_id` is set, and otherwise shows a self-refreshing "payment
+received, scan starting" state (same `<meta http-equiv="refresh">` pattern `report.html` already
+used for `scan_in_progress`).
+
+Verified end-to-end without waiting for a live card payment: Whop's own
+`POST /api/v1/webhooks/{id}/test` sent a real, independently-signed `payment.succeeded` payload
+from Whop's infrastructure to the public `/hooks/whop` URL. Server log shows it arriving from a
+Whop-owned IP and returning `200 OK` — proving signature verification passes with the real
+secret end to end, not just that the code compiles. It logged "joined to nothing" for that
+delivery, correctly, since a synthetic test payload carries no real `order_id`.
+
+### 13.22 Whop removed entirely — not in the scored rubric, and it had just eaten an hour on debugging
+
+Immediately after §13.21 confirmed the integration working live, the question "do we actually
+need Whop?" got a straight look at the rubric rather than momentum carrying the build forward.
+`CLAUDE.md`'s scoring section — Project improvement 40%, What you built 35%, Use of human input
+25% — does not mention revenue at all. `docs/SPECS.md` §8 and `docs/KICKOFF.md` both name the cut
+order explicitly: **Band → revenue → Superserve → Render Workflows, never the two Terac rounds.**
+Revenue is the second thing on a four-item list of things to cut, and the hour just spent on
+ngrok/webhook-registration/redirect_url debugging (§13.18–§13.21) went entirely into it while
+Round 2 and the held-out dashboard — the actually-scored 65% — were untouched. Decision made and
+recorded in `docs/DECISIONS.md` 017: rip it out entirely rather than leave a working-but-unused
+integration sitting in the codebase.
+
+Removed: `app/clients/whop.py`, `app/templates/order_status.html`, `scripts/probe_whop.py`,
+`scripts/register_whop_webhook.py`, `scripts/e2e_whop_webhook.py`, `tests/test_whop_payloads.py`,
+the `TestVerifyWhopSignature` class, `verify_whop_signature`, `WHOP_SIGNATURE_MAX_AGE_SECONDS`,
+the `Order` SQLAlchemy model, the `/api/checkout`, `/hooks/whop`, and `/order/{order_id}` routes,
+the `whop_sdk` dependency, `scan_price_usd`/`SCAN_PRICE_USD`, and every `WHOP_*` env var — from
+both `.env` and `.env.example`. `make e2e` and its CI step are gone with it. The live webhook
+subscription (`hook_lJjmzmi449wAB`) and dashboard plan (`plan_mFD418WxfmEX9`) were left alone on
+Whop's side rather than deleted through the API — inert with nothing left in this codebase to
+call them, not worth the extra live-mutating API calls to tidy up.
+
+`/api/scan` already existed as a direct, unpaid scan endpoint (it predates this integration and
+is what the agents' own `scan_url` tool calls) — so removing the paywall required no new ingress,
+only deleting the checkout step that ran before it. The front end (`front-end/src/App.tsx`) and
+the Jinja fallback (`app/templates/landing.html`) both now call `/api/scan` directly.
+
+### 13.23 Evidence screenshots rendered blank — ngrok's free-tier interstitial, not our server
+
+`report.html` and `t_r1.html` embedded `<img src>` pointing at the absolute evidence URL stored
+on the finding (`{settings.public_base_url}/evidence/{scan_id}/{file}.png` — required, per
+`app/sources/evidence.py`'s own docstring, because a Terac participant must be able to open the
+image from a device that has never heard of `localhost`). Loading the report locally
+(`http://127.0.0.1:8000/report/...`) left every screenshot blank.
+
+Confirmed live, not assumed: `curl` with a browser `User-Agent` against the same evidence URL
+returned `200` with `content-type: text/html`, `ngrok-error-code: ERR_NGROK_6024`, and a 2.8KB
+warning-page body — not the PNG. The same request with curl's default (non-browser) UA got the
+real file straight through. This is ngrok's documented free-tier behavior
+(ngrok.com/docs/pricing-limits/free-plan-limits): "ngrok shows an interstitial page in front of
+all HTML browser traffic on the free tier... When the visitor clicks Visit to continue, a cookie
+suppresses the interstitial for that domain for 7 days." A plain top-level page load gets the
+clickable warning page; a same-UA `<img>` subresource request gets the raw `ERR_NGROK_6024`
+instead, because there is nothing to click on inside an `<img>` tag.
+
+Fix: `evidence.to_display_path()` strips scheme+host from a stored evidence URL with
+`urlsplit(url).path`, and `report.html`/`t_r1.html` now render that path instead of the absolute
+URL. The browser then resolves the image against whatever origin actually served the page —
+`localhost` in development, the ngrok domain in the field — so the image request never leaves
+that origin and the interstitial never triggers. Verified: `curl http://127.0.0.1:8000/evidence/...`
+now returns `200 image/png` for a path pulled straight off the rendered report, with zero ngrok
+hop involved. `task_url`, the webhook URL, and the report link handed to Terac all stay absolute
+— only the two templates that render an `<img>` for a human's own browser changed.
+
+Same investigation surfaced a second, unrelated gap: a "clean" report (0 findings) showed no
+evidence at all, even though `PlaywrightSource._shot()` (`app/sources/playwright_source.py`)
+writes every before/after screenshot to `evidence/{scan_id}/` unconditionally — a finding only
+references the ones attached to something worth reporting, so a clean run's screenshots sat on
+disk, real and unlinked, indistinguishable from a scan that never ran. `report_page` now globs
+`evidence/{scan_id}/*.png` (capped at 12) when `scan.status == "clean"` and renders them under
+"Proof the scan ran: N screenshots" — no schema change, no touch to the Finding/Round1 pipeline,
+purely a read of files the scanner was already producing.
+
+### 13.24 Three real Terac Round-1 launches existed, not one — found live, not from memory
+
+A DB query for `Round` rows during this check-in turned up three *non-fixture* launched
+opportunities against the same demo target (`the-internet.herokuapp.com/status_codes`), not the
+single one this file's earlier entries describe: `yzip744iby8rpnshn3o4a67e` (12 participants,
+launched first) plus two 2-participant duplicates launched ~18 minutes later
+(`wbjawi5axc36t0iqd8n9dyii`, `x31fuqs0ppjjyp8zq6mw7vej`) — leftover from an earlier testing pass,
+never cleaned up. `get_opportunity()`'s `pricing` field confirms Terac charges
+`cost_per_participant_cents × num_participants` **at launch**, not on completion (600¢/participant
+here) — so the extra $24 (2 × 2 × $6) from the duplicates was already spent regardless of whether
+anyone completed them, and stopping them now recovers nothing. `stop_opportunity()` was called on
+both: one stopped cleanly, the other returned a genuine `500 INTERNAL_SERVER_ERROR` from Terac on
+three attempts with backoff — confirmed server-side, not a client bug, and left running since the
+money is spent either way.
+
+Net effect on the live balance (`org_context().balanceDollars`, checked live): $125 → $72 spent on
+the real round 1 → $29 left after the two duplicates. `.env`'s `R2_PARTICIPANTS=35` at the same
+$6/participant rate needs ~$210 — Round 2 cannot launch as configured against a $29 balance. This
+is a real, live budget constraint discovered by checking Terac's own API, not a hypothetical.
+`num_participants` for round 2 is a value this codebase chooses (`app/pipeline.py`
+`_bounded_participants`, clamps to a max of 60, has no balance-aware floor or scaling) — it is not
+dictated by Terac, so the fix is either topping up the org's balance before the 16:00 launch
+deadline (`docs/RUNBOOK.md`) or launching round 2 with however many participants the live balance
+actually covers.
+
+### 13.25 The opportunity and task descriptions were thin, and a launched opportunity cannot be edited
+
+The live round-1 opportunity's participant-facing copy was a title plus a two-sentence
+`description` and no task-level copy at all — the OpenAPI spec (`docs/terac_openapi.json`) has a
+`description` field on each `tasks[]` item that `build_round1_payload`/`build_round2_payload` were
+simply never setting. Rewrote both: the opportunity `description` now explains what Overwatch is,
+why the study exists, what happens to the participant's answer, and what they do and don't need to
+do; each task now carries its own `description` with the actual step-by-step instructions. No
+invented company history or fabricated statistics — only what is true of this exact pipeline.
+
+Attempted to `PATCH` the copy onto the *already-launched* round-1 opportunity
+(`yzip744iby8rpnshn3o4a67e`) so participants who apply from now on see it too. Confirmed live:
+`409 CONFLICT {"message": "Only draft opportunities can be updated"}` — not documented in the
+spec, only discoverable by trying. A launched opportunity's copy is frozen at launch time; the
+richer copy takes effect starting with round 2's launch, not retroactively on round 1.

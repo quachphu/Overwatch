@@ -283,6 +283,17 @@ class TeracClient:
         """`GET /opportunities/{id}`. Carries `screening_stats` once live."""
         return await self._request("GET", f"/opportunities/{opportunity_id}")
 
+    async def update_opportunity(
+        self, opportunity_id: str, patch: dict[str, Any]
+    ) -> dict[str, Any]:
+        """`PATCH /opportunities/{id}`.
+
+        Confirmed live (2026-08-15): a launched opportunity returns
+        `409 CONFLICT "Only draft opportunities can be updated"`. Not documented in the spec —
+        only callable on a draft, before `launch_opportunity`. RESEARCH.md §13.25.
+        """
+        return await self._request("PATCH", f"/opportunities/{opportunity_id}", json_body=patch)
+
     async def stop_opportunity(self, opportunity_id: str) -> dict[str, Any]:
         return await self._request("POST", f"/opportunities/{opportunity_id}/stop", json_body={})
 
@@ -518,11 +529,19 @@ def build_round1_payload(
         "title": "Did this web app actually fail? (3 min, screenshots only)",
         "internal_title": f"Overwatch R1 · {n_findings} findings",
         "description": (
-            "You will see evidence from an automated test of a public website: what the "
-            "test expected, what it observed, and two screenshots. For each of "
-            f"{findings_per_participant} cases, tell us whether it looks like a real "
-            "failure and how serious it would be. No account, no downloads, and you never "
-            "visit the site itself."
+            "Overwatch is an automated QA tool: a headless browser crawls a public website, "
+            "clicking around and watching for console errors, failed network requests, and "
+            "server error pages. No human has looked at what it found yet — that's this "
+            "study. You'll be shown the evidence for a handful of things it flagged (what it "
+            "tried to do, what it expected, what it actually saw, and a before/after "
+            "screenshot) and asked whether each one looks like a genuine problem and how bad "
+            "it would be if it were real. Your answers directly change the report we hand "
+            "back to the site's owner — findings the group confirms move up, findings the "
+            "group doesn't buy get demoted or cut. You need no technical background: if the "
+            "screenshots don't look broken to you, saying so is a useful answer. No account, "
+            "no downloads, and you never visit or interact with the site yourself — "
+            f"everything you need is on the task page. {findings_per_participant} cases, "
+            "about 3 minutes."
         ),
         "project_id": project_id,
         "num_participants": num_participants,
@@ -531,7 +550,9 @@ def build_round1_payload(
         "filters": [
             {"multi_select--country": {"$in": ["US"]}},
             {"integer--age": {"$gte": 18, "$lte": 65}},
-            {"multi_select--language": {"$in": ["en"]}},
+            # docs (live 400, 2026-08-15): the allowed set is full locale codes
+            # (en-US, es-ES, ...), not bare "en" — RESEARCH.md §13.16.
+            {"multi_select--language": {"$in": ["en-US"]}},
         ],
         "screening_questions": [_attention_check(), _device_question()],
         "cross_quotas": [
@@ -549,6 +570,15 @@ def build_round1_payload(
                 "review_type": REVIEW_TYPE,
                 "task_url": task_url,
                 "title": "Judge automated bug findings from screenshots",
+                "description": (
+                    "For each case on the page you'll see four things: what our test tried "
+                    "to do, what it expected to happen, what it actually observed (console "
+                    "errors, failed requests, or an error status code), and a screenshot from "
+                    "before and after the action. Read those, then answer two questions per "
+                    "case — does this look like a real problem, and if so how severe — based "
+                    "only on what's shown. There's no trick answer and no penalty for saying "
+                    "a flagged case looks fine to you; that's a real, useful result too."
+                ),
                 "duration_minutes": duration_minutes,
             }
         ],
@@ -582,9 +612,17 @@ def build_round2_payload(
         "title": "Which bug report is more useful? (3 min, side by side)",
         "internal_title": "Overwatch R2 · v1 vs v2",
         "description": (
-            "You will see two bug reports for the same website, side by side. Pick the one "
-            "that would be more useful to the team that has to fix it, and tell us why in "
-            "one line."
+            "Overwatch is an automated QA tool that scans public websites for bugs, then has "
+            "real people verify which findings are genuine and how severe they are — a "
+            "separate group did that verification step for the website in this study, "
+            "earlier. You are a completely fresh panel: you have not seen this website's "
+            "report before, and you are not told which list below reflects that earlier "
+            "human input. You'll see two ranked bug reports side by side, describing the same "
+            "automated test of the same website, just in a different order. Pick the one "
+            "that would be more useful to a team that only has time to fix problems from the "
+            "top of the list down, and say why in one line. Your pick is the actual "
+            "measurement of whether that earlier round of human verification made the report "
+            "better — not a guess, a number we report either way."
         ),
         "project_id": project_id,
         "num_participants": num_participants,
@@ -593,7 +631,9 @@ def build_round2_payload(
         "filters": [
             {"multi_select--country": {"$in": ["US"]}},
             {"integer--age": {"$gte": 18, "$lte": 65}},
-            {"multi_select--language": {"$in": ["en"]}},
+            # docs (live 400, 2026-08-15): the allowed set is full locale codes
+            # (en-US, es-ES, ...), not bare "en" — RESEARCH.md §13.16.
+            {"multi_select--language": {"$in": ["en-US"]}},
             # UNKNOWN 5: operator and value format for reference-- filters are not
             # published. `$in` with a list of opportunity ids is the shape every other
             # multi-value filter uses. Verify with `scripts/probe_terac.py --filters`.
@@ -618,6 +658,14 @@ def build_round2_payload(
                 "review_type": REVIEW_TYPE,
                 "task_url": task_url,
                 "title": "Compare two bug reports",
+                "description": (
+                    "Report A and Report B below list the same problems, found by the same "
+                    "automated test of the same website — just ordered differently. Read down "
+                    "each list the way you would if you were the one fixing this site and "
+                    "only had time to work from the top. Choose whichever one you'd rather "
+                    "receive, then add a one-line reason (optional but useful — e.g. "
+                    "'the serious problems are nearer the top')."
+                ),
                 "duration_minutes": duration_minutes,
             }
         ],

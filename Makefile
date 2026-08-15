@@ -1,4 +1,4 @@
-.PHONY: help install dev agents probe test lint fmt fmt-check fakes gate ci frontend rehearse e2e
+.PHONY: help install dev agents probe test lint fmt fmt-check fakes gate ci frontend rehearse
 
 # Prefer the project venv when it exists, so every target works from a clean checkout after
 # `make install` whether or not the shell has activated it. Bare `python` also breaks on hosts
@@ -23,9 +23,8 @@ help:
 	@echo "  gate        fakes + lint + test — run before every milestone"
 	@echo "  ci          everything CI runs, locally"
 	@echo ""
-	@echo "  probe SVC=terac|whop|band|replay    one real API call, raw output"
+	@echo "  probe SVC=terac|band|replay         one real API call, raw output"
 	@echo "  rehearse    full pipeline against simulated raters (needs a server on :8013)"
-	@echo "  e2e         Whop webhook against a real server (starts its own)"
 
 install:
 	python3 -m venv .venv
@@ -52,7 +51,7 @@ agents:
 	tmux select-layout -t ow tiled
 	tmux attach -t ow
 
-# make probe SVC=terac | whop | band | replay
+# make probe SVC=terac | band | replay
 # PYTHONPATH=. because running a file inside scripts/ puts scripts/ on sys.path, not the repo
 # root, so `from app.config import settings` raises ModuleNotFoundError. Set here rather than
 # with a sys.path hack in each probe.
@@ -77,19 +76,6 @@ fmt-check:
 rehearse:
 	PYTHONPATH=. $(PY) scripts/rehearse_experiment.py --base http://localhost:8013
 
-# /hooks/whop against a real server: header names, forged payments, duplicate deliveries.
-# Starts and stops its own server, so it needs nothing running.
-e2e:
-	@rm -f /tmp/ow_e2e.db
-	@mkdir -p /tmp/ow
-	@BUG_SOURCE=seed DATABASE_URL="sqlite:////tmp/ow_e2e.db" WHOP_WEBHOOK_SECRET=whsec_e2e \
-		PUBLIC_BASE_URL=http://localhost:8021 \
-		$(PY) -m uvicorn app.main:app --port 8021 --log-level warning > /tmp/ow/e2e_server.log 2>&1 & \
-	for i in $$(seq 1 25); do curl -sf http://localhost:8021/healthz >/dev/null && break; sleep 1; done; \
-	PYTHONPATH=. $(PY) scripts/e2e_whop_webhook.py --base http://localhost:8021 \
-		--db /tmp/ow_e2e.db --secret whsec_e2e; \
-	rc=$$?; pkill -f "uvicorn app.main:app --port 8021" >/dev/null 2>&1; exit $$rc
-
 # Must print "clean" before any milestone is called done.
 fakes:
 	@grep -rn --include='*.py' --include='*.ts' --include='*.tsx' --include='*.html' \
@@ -100,5 +86,5 @@ gate: fakes lint test
 	@date "+%H:%M — gate check"
 
 # What CI runs, so a red build can be reproduced without pushing.
-ci: lint fmt-check test e2e
+ci: lint fmt-check test
 	@echo "CI-equivalent checks passed."

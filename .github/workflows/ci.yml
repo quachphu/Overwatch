@@ -54,11 +54,6 @@ jobs:
           pip install -r requirements.txt
       - name: Test
         run: pytest
-      # The Whop webhook path is only meaningfully covered against a live server: signature
-      # headers, forged payloads and duplicate deliveries all depend on the raw request bytes,
-      # which a TestClient-level test can misrepresent.
-      - name: End-to-end webhook
-        run: make e2e
 
   no-unmarked-stubs:
     name: No unmarked stubs

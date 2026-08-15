@@ -23,11 +23,6 @@ from urllib.parse import urlparse
 # docs: https://terac.com/docs/developers/guides/webhooks
 SIGNATURE_MAX_AGE_SECONDS = 300
 
-# Whop follows Standard Webhooks: "Reject a request if its `webhook-timestamp` is more than
-# 5 minutes from the current time."
-# docs: https://docs.whop.com/developer/guides/webhooks
-WHOP_SIGNATURE_MAX_AGE_SECONDS = 300
-
 
 class UnsafeTargetError(ValueError):
     """The URL resolves somewhere we refuse to send a browser."""
@@ -174,57 +169,6 @@ def verify_terac_signature(
     # Compare decoded bytes so that base64 padding differences do not cause a false
     # negative, and use compare_digest for constant time.
     return hmac.compare_digest(base64.b64decode(expected), provided)
-
-
-def verify_whop_signature(
-    raw_body: bytes,
-    signature_header: str | None,
-    webhook_id: str | None,
-    timestamp_header: str | None,
-    secret: str,
-    *,
-    max_age_seconds: int = WHOP_SIGNATURE_MAX_AGE_SECONDS,
-    now: float | None = None,
-) -> bool:
-    """Verify a Whop webhook against the Standard Webhooks specification.
-
-    docs: https://docs.whop.com/developer/guides/webhooks
-    <https://github.com/standard-webhooks/standard-webhooks>
-
-    Whop signs `{webhook-id}.{webhook-timestamp}.{raw body}` with HMAC-SHA256 and base64s the
-    result into `webhook-signature: v1,<sig>`. Requests older than five minutes are rejected.
-
-    **This is not Terac's scheme.** Terac signs `timestamp + RAW_BODY` with no message id and no
-    separators (`verify_terac_signature` above). The two are close enough to look
-    interchangeable and are not, so they stay as separate functions rather than one helper with
-    a flag — a shared implementation here would be a silent 401 on one provider.
-
-    The header can carry several space-delimited signatures, since a rotating secret produces
-    one per active key. Any valid one passes.
-    """
-    if not signature_header or not webhook_id or not timestamp_header or not secret:
-        return False
-
-    try:
-        sent_at = int(timestamp_header)
-    except (TypeError, ValueError):
-        return False
-
-    current = time.time() if now is None else now
-    if abs(current - sent_at) > max_age_seconds:
-        return False
-
-    signed = f"{webhook_id}.{sent_at}.".encode() + raw_body
-    expected = base64.b64encode(
-        hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).digest()
-    ).decode()
-
-    for candidate in signature_header.split():
-        # Each entry is `v1,<base64>`. Unversioned entries are ignored rather than guessed at.
-        version, _, provided = candidate.partition(",")
-        if version == "v1" and provided and hmac.compare_digest(expected, provided):
-            return True
-    return False
 
 
 # ── Destructive action blocking ──────────────────────────────────────────────────────

@@ -5,11 +5,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 
-An agent-run QA company. Paste a URL and pay; a crew of autonomous agents scans the app for
-bugs, then **hires real people through the Terac API** to judge which findings are real and
-which matter. Those human labels recalibrate our triage into a second, better-ranked report —
-and a fresh panel of people who never saw the first round decides whether it actually got
-better.
+An agent-run QA company. Paste a URL; a crew of autonomous agents scans the app for bugs, then
+**hires real people through the Terac API** to judge which findings are real and which matter.
+Those human labels recalibrate our triage into a second, better-ranked report — and a fresh
+panel of people who never saw the first round decides whether it actually got better.
 
 The claim is not "AI finds bugs". It is **"we measured whether paying humans made the output
 better, and here is the number with its confidence interval."**
@@ -22,8 +21,7 @@ Built for the Zero-Human Company Hackathon (Terac, Aug 2026).
 
 ```mermaid
 flowchart TB
-    U([Customer pastes a URL]) --> W[Whop checkout]
-    W -->|payment.succeeded webhook| S[Scout: drive a real browser<br/>console errors, failed requests, screenshots]
+    U([Customer pastes a URL]) --> S[Scout: drive a real browser<br/>console errors, failed requests, screenshots]
     S --> V1[Report v1<br/>severity then confidence, deliberately naive]
 
     V1 --> R1[Round 1 · Terac<br/>12 people judge 20 findings, 3 raters each]
@@ -79,16 +77,11 @@ make gate        # fakes + lint + test — the one command to run before any mil
 or individually:
 
 ```bash
-make test        # 231 tests, no network
+make test        # pytest, no network
 make lint        # ruff
 make fakes       # must print "clean" — greps for unmarked stubs
-make e2e         # /hooks/whop against a real server; starts and stops its own
 make ci          # everything CI runs, locally
 ```
-
-`make e2e` is the one that catches wiring bugs unit tests cannot see: whether the route reads
-Whop's real header names, whether a forged payment can start a paid scan, and whether two
-deliveries for one payment start two scans. It found the last of those (`RESEARCH.md` §12.1).
 
 Then rehearse the entire experiment against simulated raters:
 
@@ -114,7 +107,6 @@ shape, *then* trust the client:
 
 ```bash
 make probe SVC=terac
-make probe SVC=whop
 make probe SVC=band
 make probe SVC=replay                                        # auth + list, spends nothing
 make probe SVC=replay ARGS="--create https://your.example"    # really starts a project
@@ -197,16 +189,16 @@ app/
   config.py        every env var, read once
   models.py        SQLAlchemy tables + Pydantic models for external payloads
   agents/          5 Band agents; prompts.py is verbatim from docs/AGENTS.md
-  clients/         terac.py whop.py superserve.py
+  clients/         terac.py superserve.py
   sources/         playwright_source.py replay.py seed.py + evidence store
   templates/       task pages, report, dashboard, landing fallback
   static/          overwatch.css — design tokens shared with the React build
 front-end/         React landing hero, built to front-end/design_prompt.md
 workflows/         Render Workflows durable orchestration
 scripts/           probe_*.py — one real call each; rehearse_experiment.py
-tests/             231 tests, no network
+tests/             pytest, no network
 docs/              specification, agent prompts, decisions, runbook
-.github/workflows/ CI: lint, tests on 3.11 + 3.13, e2e, stub check, frontend build
+.github/workflows/ CI: lint, tests on 3.11 + 3.13, stub check, frontend build
 ```
 
 ## Development
@@ -220,8 +212,8 @@ make fmt         # ruff format
 Tooling is configured in one place, `pyproject.toml`: dependencies, ruff (lint + format) and
 pytest. `requirements.txt` stays the installer of record for deploys — see `docs/DECISIONS.md`.
 
-CI runs lint, the test suite on Python 3.11 and 3.13, the live-server webhook end-to-end test,
-the unmarked-stub check, and the landing-page build.
+CI runs lint, the test suite on Python 3.11 and 3.13, the unmarked-stub check, and the
+landing-page build.
 
 ## Documents
 

@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 # override=True: python-dotenv's default silently ignores a key that already exists in the
 # process environment, even if the existing value is "". Any terminal session where a shell
-# profile or an earlier `export` set e.g. WHOP_COMPANY_ID="" would then never see a later edit
+# profile or an earlier `export` set e.g. TERAC_PROJECT_ID="" would then never see a later edit
 # to .env — the file said one thing, the running app read another. .env is meant to be the one
 # source of truth (see the file's own header comment), so it must win.
 load_dotenv(override=True)
@@ -60,20 +60,6 @@ def _int(name: str, default: int) -> int:
         return default
 
 
-def _float(name: str, default: float) -> float:
-    """As `_int`, for floats."""
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        logging.getLogger(__name__).error(
-            "%s=%r is not a number; falling back to %s.", name, raw, default
-        )
-        return default
-
-
 class Settings:
     """Read-only view of the environment."""
 
@@ -84,12 +70,6 @@ class Settings:
     terac_api_key: str | None = os.environ.get("TERAC_API_KEY")
     terac_webhook_secret: str | None = os.environ.get("TERAC_WEBHOOK_SECRET")
     terac_project_id: str | None = os.environ.get("TERAC_PROJECT_ID")
-
-    # ── Whop ───────────────────────────────────────────────────────────────────────
-    whop_api_key: str | None = os.environ.get("WHOP_API_KEY")
-    whop_company_id: str | None = os.environ.get("WHOP_COMPANY_ID")
-    whop_plan_id: str | None = os.environ.get("WHOP_PLAN_ID")
-    whop_webhook_secret: str | None = os.environ.get("WHOP_WEBHOOK_SECRET")
 
     # ── Superserve / Replay ────────────────────────────────────────────────────────
     superserve_api_key: str | None = os.environ.get("SUPERSERVE_API_KEY")
@@ -112,7 +92,6 @@ class Settings:
     public_base_url: str = _str("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
     evidence_base_url: str | None = os.environ.get("EVIDENCE_BASE_URL")
     evidence_dir: str = _str("EVIDENCE_DIR", "./evidence")
-    scan_price_usd: float = _float("SCAN_PRICE_USD", 49)
 
     # Shared secret for the operator API — the endpoints that launch Terac rounds and
     # therefore spend real money. Required once the app is publicly reachable; see

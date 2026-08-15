@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from app.config import settings
 
@@ -42,6 +43,25 @@ def save_screenshot(scan_id: str, filename: str, data: bytes) -> str:
 
 def public_url(scan_id: str, filename: str) -> str:
     return f"{settings.evidence_public_base}/{scan_id}/{os.path.basename(filename)}"
+
+
+def to_display_path(url: str) -> str:
+    """Path-only form of an evidence URL, safe to embed as a same-origin `<img src>`.
+
+    Evidence URLs are stored absolute (module docstring — Terac participants must be able to
+    open one from any device). But `report.html` and `t_r1.html` are rendered and *viewed* on
+    whatever origin the viewer's browser is currently on: localhost while developing, the ngrok
+    domain in the field. An absolute cross-origin `<img src>` pointed at a free-tier ngrok
+    tunnel hits ngrok's browser-warning interstitial for any browser that has not already
+    clicked through it on that exact domain — the request never reaches our server at all, it
+    gets back an HTML warning page (`ERR_NGROK_6024`) instead of image bytes, which renders as a
+    blank/broken image. Stripping to a path makes the browser resolve it against whatever origin
+    served the page — always this same app — so the image request never leaves that origin and
+    the interstitial never triggers. RESEARCH.md §13.23.
+    """
+    if not url:
+        return url
+    return urlsplit(url).path or url
 
 
 def is_public_url(url: str) -> bool:

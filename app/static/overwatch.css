@@ -685,6 +685,32 @@ pre.console {
   background: rgba(81, 207, 102, 0.1);
 }
 
+/* ── Scan progress: indeterminate, because a real crawl has no known %. ─────────── */
+
+.progress-track {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 40%;
+  border-radius: 999px;
+  background: var(--cosmetic);
+  animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
 /* ── Sticky task footer: the submit button must always be reachable on a phone. ─── */
 
 .sticky-actions {

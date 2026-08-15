@@ -235,3 +235,29 @@ passed. Separately, evidence URLs are absolute and frozen at capture time, so a 
 converting a paid round into unusable labels. Chose to validate stored URLs rather than refactor
 evidence storage to relative paths: the refactor is cleaner and touches storage, templates and the
 report renderer, and this is the same guarantee for one function's worth of change.
+
+---
+
+## 017 — Whop (revenue) ripped out entirely, not just left broken (13:10)
+
+**Context:** the Whop checkout/webhook integration was fully wired and, after real debugging
+(RESEARCH.md §13.18–§13.21), verified live end to end — real checkout, real redirect, a real
+signed test delivery accepted. But revenue is not in the scored rubric (`CLAUDE.md`: Project
+improvement 40% / What you built 35% / Use of human input 25%) and is explicitly named the
+**second** thing to cut under pressure, right after Band, in both `docs/SPECS.md` §8 and
+`docs/KICKOFF.md`. The debugging session that made it work had just spent roughly an hour on the
+lowest-priority item on the list while Round 2 and the held-out dashboard — the actually-scored
+work — were untouched.
+
+**Decision:** remove Whop from the app entirely rather than leave it wired-but-unused. Deleted
+`app/clients/whop.py`, `scripts/probe_whop.py`, `scripts/register_whop_webhook.py`,
+`scripts/e2e_whop_webhook.py`, the `Order` model, `verify_whop_signature`, the `/api/checkout`,
+`/hooks/whop`, and `/order/{id}` routes, the Whop tests, and every `WHOP_*` env var and
+`whop_sdk`/`SCAN_PRICE_USD` reference. `/api/scan` — which already existed as a direct, unpaid
+scan endpoint — is now the only ingress; the front end calls it directly with no checkout step.
+
+**Consequence:** a smaller, simpler demo surface with one fewer external dependency that can fail
+in front of judges, at the cost of the revenue beat in the pitch. This was a live, working
+integration when it was deleted — not a stub, not something that never worked — which is worth
+recording so a future read of the git history does not mistake "removed" for "never finished."
+Full detail of what existed and was verified live: RESEARCH.md §13.18–§13.22.

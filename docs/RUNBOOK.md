@@ -53,11 +53,11 @@ Account setup and reading docs is not building the project — every hackathon a
 
 **13:30 — Round 1 launch. Hard deadline.** Ship whatever findings exist.
 
-**15:00 — Crew gate.** Five agents in one room, `Emit.EXECUTION` on, one full handoff visible in the Band console. Whop tested with a real $1 charge on your own card.
+**15:00 — Crew gate.** Five agents in one room, `Emit.EXECUTION` on, one full handoff visible in the Band console.
 
 **16:00 — Round 2 launch. Hard deadline.** Partial labels are fine. A round-2 launch at 16:00 with imperfect input beats a perfect one at 17:30 that never fills.
 
-**16:00–17:30 — Sell scans, build the chart.** Walk the floor. Revenue is a distribution problem, not a tech one.
+**16:00–17:30 — Build the chart.** Revenue (Whop) was cut — out of scope for the scored rubric, second in the cut order below, and ripped out entirely once it started costing more debugging time than it was worth (`RESEARCH.md` §13.22). Time that would have gone to selling scans goes to the dashboard and the pitch instead.
 
 **17:30–18:20 — Record the video twice.** Venue wifi will not be your friend at 20:20.
 
@@ -67,7 +67,7 @@ Account setup and reading docs is not building the project — every hackathon a
 
 ## Cut order
 
-Under time pressure, in this order: **Band → revenue → Superserve → Render Workflows.**
+Under time pressure, in this order: **Band → revenue (already cut, see `RESEARCH.md` §13.22) → Superserve → Render Workflows.**
 
 **Never cut the two Terac rounds.** They are roughly two-thirds of the overall rubric and the entire reason this event exists.
 
@@ -88,9 +88,8 @@ An unmarked stub that survives to the demo is a lie told to judges, and this pan
 1. **10s** "Overwatch is a company with no employees. It sells QA. The only humans involved are the ones it hires, per job, through Terac."
 2. **25s** Paste a URL live. Cut to the Band room — Scout posts findings, Triage @mentions Recruiter, Recruiter launches Terac. Real agents on camera.
 3. **25s** Terac dashboard, real submissions arriving. Show one evidence bundle exactly as a participant saw it.
-4. **35s** The chart. Lead with preference share and its interval, then held-out precision v1→v2. **State n. State that round 2 excluded round-1 participants by filter. Say the word "held-out" out loud** — it pre-empts the sharpest question available to this panel, which is whether v2 was scored on the labels that built it. It was not, and the dashboard shows the in-sample number separately to prove we know the difference.
-5. **15s** Whop dashboard, real revenue earned today.
-6. **10s** "Take Band out and the pipeline halts after Scout. Take Terac out and there's no improvement at all — just another bug list nobody trusts."
+4. **50s** The chart. Lead with preference share and its interval, then held-out precision v1→v2. **State n. State that round 2 excluded round-1 participants by filter. Say the word "held-out" out loud** — it pre-empts the sharpest question available to this panel, which is whether v2 was scored on the labels that built it. It was not, and the dashboard shows the in-sample number separately to prove we know the difference.
+5. **10s** "Take Band out and the pipeline halts after Scout. Take Terac out and there's no improvement at all — just another bug list nobody trusts."
 
 ---
 

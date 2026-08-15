@@ -67,10 +67,29 @@
 
   {% if scan_in_progress %}
   <div class="notice">
-    Scan in progress — the browser is still walking the page (this page refreshes itself
-    every few seconds). A live scan can take up to about 90 seconds. What you see below, if
-    anything, is what has been found so far.
+    <div class="row" style="justify-content: space-between; margin-bottom: 0.625rem">
+      <strong>Scanning — a real browser is walking the page right now</strong>
+      <span class="mono muted" id="scan-elapsed" data-started="{{ scan_elapsed_seconds }}">
+        {{ scan_elapsed_seconds }}s elapsed
+      </span>
+    </div>
+    <div class="progress-track" aria-hidden="true"><div class="progress-fill"></div></div>
+    <p class="muted" style="font-size: 0.8125rem; margin: 0.625rem 0 0">
+      Usually finishes within about 90 seconds. This page checks every few seconds and will
+      switch to the report automatically — no need to refresh it yourself.
+    </p>
   </div>
+  <script>
+    (function () {
+      var el = document.getElementById("scan-elapsed");
+      if (!el) return;
+      var elapsed = parseInt(el.getAttribute("data-started"), 10) || 0;
+      setInterval(function () {
+        elapsed += 1;
+        el.textContent = elapsed + "s elapsed";
+      }, 1000);
+    })();
+  </script>
   {% elif scan_status == 'failed' %}
   <div class="notice notice--block">
     <strong>The scan failed before it could finish.</strong>
@@ -81,6 +100,21 @@
     No findings. A clean app is a real result and we are not going to invent problems to fill
     a page.
   </div>
+  {% if proof_screenshots %}
+  <div style="margin-top: 1.5rem">
+    <p class="muted" style="font-size: 0.875rem; margin-bottom: 0.75rem">
+      Proof the scan ran: {{ proof_screenshots | length }} screenshots captured while loading
+      the page and exercising its interactive elements. None showed an error worth reporting.
+    </p>
+    <div class="shots">
+      {% for shot in proof_screenshots %}
+      <figure class="shot" style="margin: 0">
+        <img src="{{ shot }}" alt="Screenshot taken during the scan" loading="lazy" />
+      </figure>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {% for f in findings %}

@@ -373,28 +373,6 @@ class WebhookEvent(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
-class Order(Base):
-    __tablename__ = "orders"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("ord"))
-    url: Mapped[str] = mapped_column(Text)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), default="pending")
-    amount_usd: Mapped[float] = mapped_column(Float, default=0.0)
-    checkout_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # The `ch_…` checkout configuration id. A second join key for `payment.succeeded`: Whop
-    # documents `checkout_configuration_id` on the payment as "Use this to map payments back to
-    # the checkout configuration that created them", and it is the fallback for when
-    # `metadata.order_id` does not arrive.
-    checkout_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
-    scan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Why a paid order never produced a scan. Set with `status="refund_due"` so a customer who
-    # was charged for nothing is visible in the data rather than only in the logs.
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
-
-
 class Veto(Base):
     """Critic's blocks. Bursar reads this before releasing anything."""
 

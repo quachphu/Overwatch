@@ -55,7 +55,7 @@ async def scan_url(url: str) -> str:
         # blocker to Triage, which it cannot do if the tool call blows up the turn.
         return _json({"scan_id": scan_id, "error": type(exc).__name__, "detail": str(exc)})
 
-    low_confidence = sum(1 for f in findings if f.confidence < 0.5)
+    low_confidence = sum(1 for f in findings if f.agent_confidence < 0.5)
     return _json(
         {
             "scan_id": scan_id,
@@ -78,8 +78,8 @@ def list_findings(scan_id: str) -> str:
                 "id": f.id,
                 "journey": f.journey,
                 "category": f.category,
-                "severity": f.severity,
-                "confidence": round(f.confidence, 3),
+                "severity": f.agent_severity,
+                "confidence": round(f.agent_confidence, 3),
                 "observed": f.observed[:200],
             }
             for f in findings

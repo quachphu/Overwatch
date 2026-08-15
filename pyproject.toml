@@ -29,7 +29,6 @@ dependencies = [
   "band-sdk[langgraph]==1.6.0",
   "render_sdk==0.7.0",
   "superserve==0.8.2",
-  "whop_sdk==0.0.41",
   "playwright==1.48.*",
 ]
 

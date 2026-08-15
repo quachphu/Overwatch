@@ -52,8 +52,7 @@
 </main>
 
 <script>
-  // Mirrors front-end/src/App.tsx: try checkout, fall back to a free scan so a dead payment
-  // provider cannot block the product (docs/RUNBOOK.md cut order).
+  // Mirrors front-end/src/App.tsx.
   const form = document.getElementById("start");
   const note = document.getElementById("note");
   const button = form.querySelector("button");
@@ -66,27 +65,12 @@
     button.disabled = true;
     note.textContent = "Starting your scan…";
 
-    const post = (path) =>
-      fetch(path, {
+    try {
+      const scan = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
-
-    try {
-      const checkout = await post("/api/checkout");
-      const paid = await checkout.json().catch(() => ({}));
-      if (checkout.ok && paid.checkout_url) {
-        window.location.href = paid.checkout_url;
-        return;
-      }
-      if (checkout.status === 400 && paid.detail) {
-        note.textContent = paid.detail;
-        button.disabled = false;
-        return;
-      }
-
-      const scan = await post("/api/scan");
       const data = await scan.json().catch(() => ({}));
       if (!scan.ok) {
         note.textContent = data.detail || "Could not start the scan.";

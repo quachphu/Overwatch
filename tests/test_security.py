@@ -1,8 +1,7 @@
 """Tests for the two security boundaries that face untrusted input.
 
-SPECS.md §9. A customer types a URL and we drive a browser at it, and Terac and Whop POST to us
-over the open internet. Both are places where "it works" and "it is safe" are different
-statements.
+SPECS.md §9. A customer types a URL and we drive a browser at it, and Terac POSTs to us over the
+open internet. Both are places where "it works" and "it is safe" are different statements.
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from app.security import (
     assert_safe_target,
     is_destructive,
     verify_terac_signature,
-    verify_whop_signature,
 )
 
 
@@ -179,82 +177,3 @@ class TestVerifyTeracSignature:
     def test_rejects_garbage_signature(self):
         ts = str(int(time.time()))
         assert verify_terac_signature(b"{}", "not-base64!!", ts, self.secret) is False
-
-
-class TestVerifyWhopSignature:
-    """Standard Webhooks: `base64(HMAC-SHA256(secret, "{id}.{timestamp}.{raw body}"))`.
-
-    Deliberately close to Terac's scheme and deliberately tested apart from it. Terac signs
-    `timestamp + body` with no id and no dots; Whop signs an id and dots. Verifying one payload
-    with the other function must fail, and the last test pins that.
-    """
-
-    secret = "whsec_whop_test"
-    webhook_id = "msg_2abc"
-
-    def sign(self, body: bytes, timestamp: str, *, secret: str | None = None) -> str:
-        signed = f"{self.webhook_id}.{timestamp}.".encode() + body
-        mac = hmac.new((secret or self.secret).encode(), signed, hashlib.sha256).digest()
-        return "v1," + base64.b64encode(mac).decode()
-
-    # Sentinel, because `wid=None` is a case under test and cannot double as "use the default".
-    _DEFAULT = object()
-
-    def call(self, body: bytes, sig: str | None, ts: str | None, *, wid: object = _DEFAULT):
-        webhook_id = self.webhook_id if wid is self._DEFAULT else wid
-        return verify_whop_signature(body, sig, webhook_id, ts, self.secret)
-
-    def test_accepts_a_valid_signature(self):
-        body = b'{"type":"payment.succeeded","data":{"metadata":{"order_id":"ord_1"}}}'
-        ts = str(int(time.time()))
-        assert self.call(body, self.sign(body, ts), ts) is True
-
-    def test_accepts_one_valid_signature_among_several(self):
-        """A rotating secret delivers one space-delimited signature per active key."""
-        body = b"{}"
-        ts = str(int(time.time()))
-        header = f"{self.sign(body, ts, secret='old_key')} {self.sign(body, ts)}"
-        assert self.call(body, header, ts) is True
-
-    def test_rejects_a_tampered_order_id(self):
-        """The metadata is our join key, so tampering with it is the attack that matters."""
-        body = b'{"data":{"metadata":{"order_id":"ord_1"}}}'
-        ts = str(int(time.time()))
-        sig = self.sign(body, ts)
-        evil = b'{"data":{"metadata":{"order_id":"ord_VICTIM"}}}'
-        assert self.call(evil, sig, ts) is False
-
-    def test_rejects_a_swapped_webhook_id(self):
-        """The id is inside the signed string, so it cannot be replayed under another id."""
-        body = b"{}"
-        ts = str(int(time.time()))
-        assert self.call(body, self.sign(body, ts), ts, wid="msg_other") is False
-
-    def test_rejects_a_stale_timestamp(self):
-        body = b"{}"
-        old = str(int(time.time()) - 3600)
-        assert self.call(body, self.sign(body, old), old) is False
-
-    def test_rejects_an_unversioned_signature(self):
-        """A bare base64 digest with no `v1,` prefix is not a scheme we accept."""
-        body = b"{}"
-        ts = str(int(time.time()))
-        assert self.call(body, self.sign(body, ts).removeprefix("v1,"), ts) is False
-
-    def test_rejects_missing_headers(self):
-        body = b"{}"
-        ts = str(int(time.time()))
-        sig = self.sign(body, ts)
-        assert self.call(body, None, ts) is False
-        assert self.call(body, sig, None) is False
-        assert self.call(body, sig, ts, wid=None) is False
-
-    def test_rejects_a_non_numeric_timestamp(self):
-        body = b"{}"
-        assert self.call(body, self.sign(body, "not-a-time"), "not-a-time") is False
-
-    def test_the_two_providers_are_not_interchangeable(self):
-        body = b'{"type":"payment.succeeded"}'
-        ts = str(int(time.time()))
-        whop_sig = self.sign(body, ts)
-        assert verify_terac_signature(body, whop_sig.removeprefix("v1,"), ts, self.secret) is False

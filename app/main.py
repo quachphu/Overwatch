@@ -6,8 +6,8 @@ served as static files, so a broken node toolchain can never take down a task pa
 
 Route groups:
 
-* `/` `/api/scan` `/api/checkout`      customer-facing ingress
-* `/hooks/terac` `/hooks/whop`          webhook receivers, HMAC-verified, ACK-then-work
+* `/` `/api/scan`                      customer-facing ingress — scanning is free, no paywall
+* `/hooks/terac`                       webhook receiver, HMAC-verified, ACK-then-work
 * `/t/r1/{scan_id}` `/t/r2/{scan_id}`   Terac participant task pages
 * `/t/smoke`                            the 10:45 latency probe's landing page
 * `/report/{scan_id}` `/dashboard`      deliverables
@@ -33,7 +33,6 @@ from sqlalchemy import select, update
 
 from app import pipeline
 from app.clients.terac import TeracClient
-from app.clients.whop import WhopClient
 from app.config import settings
 from app.db import init_db, session_scope
 from app.models import (
@@ -41,7 +40,6 @@ from app.models import (
     Finding,
     HumanLabel,
     Label,
-    Order,
     Preference,
     Round,
     Scan,
@@ -50,9 +48,8 @@ from app.models import (
 from app.security import (
     UnsafeTargetError,
     verify_terac_signature,
-    verify_whop_signature,
 )
-from app.sources.evidence import evidence_root
+from app.sources.evidence import evidence_root, public_url, to_display_path
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -228,54 +225,6 @@ async def _run_scan_safely(scan_id: str) -> None:
         logger.exception("Background scan %s failed", scan_id)
 
 
-@app.post("/api/checkout")
-async def api_checkout(request: Request) -> JSONResponse:
-    """Create a Whop checkout for one scan.
-
-    `metadata.order_id` is the join key that comes back untouched on `payment.succeeded`,
-    which is how a payment finds its scan (`CLAUDE.md`, Whop gotchas).
-    """
-    payload = await _json_or_form(request)
-    url = str(payload.get("url") or "").strip()
-    email = payload.get("email")
-    if not url:
-        raise HTTPException(status_code=400, detail="A url is required.")
-
-    try:
-        from app.security import assert_safe_target
-
-        url = assert_safe_target(url)
-    except UnsafeTargetError as exc:
-        raise HTTPException(status_code=400, detail=f"Refusing to scan this target: {exc}") from exc
-
-    with session_scope() as session:
-        order = Order(url=url, email=email, amount_usd=settings.scan_price_usd)
-        session.add(order)
-        session.flush()
-        order_id = order.id
-
-    try:
-        async with WhopClient() as whop:
-            checkout = await whop.create_checkout(order_id=order_id, url=url)
-    except Exception as exc:
-        logger.error("Whop checkout failed for order %s: %s", order_id, exc)
-        # Revenue is second in the cut order (docs/RUNBOOK.md). A dead payment provider must
-        # not block a scan, so the order is returned unpaid and the caller can still scan.
-        return JSONResponse(
-            {"order_id": order_id, "checkout_url": None, "error": str(exc)},
-            status_code=502,
-        )
-
-    with session_scope() as session:
-        order = session.get(Order, order_id)
-        if order is not None:
-            order.checkout_url = checkout.get("checkout_url")
-            order.plan_id = checkout.get("plan_id")
-            order.checkout_id = checkout.get("checkout_id")
-
-    # `raw` is the full Whop response — useful in a probe, noise in an HTTP body the landing
-    # page parses.
-    return JSONResponse({"order_id": order_id, **{k: v for k, v in checkout.items() if k != "raw"}})
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════
@@ -395,159 +344,6 @@ async def _process_terac_event(body: dict[str, Any]) -> None:
             pipeline.build_v2(scan_id)
         except Exception:
             logger.exception("build_v2 failed for %s", scan_id)
-
-
-@app.post("/hooks/whop")
-async def hooks_whop(
-    request: Request,
-    background: BackgroundTasks,
-    webhook_id: str | None = Header(default=None, alias="webhook-id"),
-    webhook_timestamp: str | None = Header(default=None, alias="webhook-timestamp"),
-    webhook_signature: str | None = Header(default=None, alias="webhook-signature"),
-) -> JSONResponse:
-    """Whop payment webhook. `metadata.order_id` joins the payment to its scan.
-
-    Whop implements Standard Webhooks, so the three headers below are all required and the
-    signature covers `{webhook-id}.{webhook-timestamp}.{raw body}`.
-    docs: https://docs.whop.com/developer/guides/webhooks
-
-    Two delivery rules shape this handler:
-
-    * "Respond with a 2xx status in less than 5 seconds." Fulfilment runs in the background.
-    * "Whop delivers each event at least one time... Each retry of a delivery has the same
-      `webhook-id`. Store the `webhook-id` and ignore duplicates."
-    """
-    raw = await request.body()
-    secret = settings.whop_webhook_secret
-    if secret:
-        if not verify_whop_signature(
-            raw,
-            webhook_signature,
-            webhook_id,
-            webhook_timestamp,
-            secret,
-        ):
-            logger.warning("Rejected Whop webhook with a bad signature.")
-            raise HTTPException(status_code=401, detail="Invalid signature.")
-    elif settings.is_publicly_reachable:
-        # Fail closed. With no secret this branch previously skipped verification silently, so
-        # anyone who could reach the URL could forge `payment.succeeded` and get a free scan —
-        # which spends our Terac credit on their target. Unlike the Terac receiver above there
-        # is no confirmation-ping reason to accept unverified deliveries, so refusing costs
-        # nothing but a misconfiguration.
-        logger.error(
-            "WHOP_WEBHOOK_SECRET is not set and this instance is publicly reachable. Refusing "
-            "the delivery rather than starting a scan on an unverified payment."
-        )
-        raise HTTPException(status_code=503, detail="Webhook verification is not configured.")
-    else:
-        logger.warning("WHOP_WEBHOOK_SECRET is not set — accepting UNVERIFIED on localhost only.")
-
-    try:
-        body = json.loads(raw or b"{}")
-    except json.JSONDecodeError:
-        return JSONResponse({"ok": True, "ignored": "non-json"})
-
-    # Prefer the header: it is stable across retries by specification, where the body id is
-    # only documented to match it.
-    event_id = webhook_id or body.get("id")
-    if event_id:
-        with session_scope() as session:
-            if session.get(WebhookEvent, str(event_id)) is not None:
-                return JSONResponse({"ok": True, "duplicate": True})
-            session.add(
-                WebhookEvent(
-                    event_id=str(event_id),
-                    provider="whop",
-                    event_type=str(body.get("type") or ""),
-                    payload=body,
-                )
-            )
-
-    background.add_task(_process_whop_event, body)
-    return JSONResponse({"ok": True})
-
-
-async def _process_whop_event(body: dict[str, Any]) -> None:
-    # Branch on the envelope's `type`, never on the payment's `status`. The canonical
-    # `payment.succeeded` example in Whop's OpenAPI spec carries `"status": "paid"` with
-    # `"substatus": "succeeded"`, while the accept-payments guide shows `"status": "succeeded"` —
-    # the two disagree, and `type` is unambiguous in both.
-    if str(body.get("type") or "") != "payment.succeeded":
-        return
-
-    data = body.get("data") or body
-    metadata = data.get("metadata") or {}
-    order_id = metadata.get("order_id")
-
-    with session_scope() as session:
-        order = session.get(Order, str(order_id)) if order_id else None
-
-        if order is None:
-            # Fall back to the checkout configuration id. Whether metadata survives a bare
-            # `whop.com/checkout/{plan_id}` link that drops the `?session=ch_…` parameter is not
-            # documented, and this join key is on the payment either way — so a payment whose
-            # metadata went missing still finds its scan instead of being dropped on the floor.
-            checkout_id = data.get("checkout_configuration_id")
-            if checkout_id:
-                order = session.scalars(
-                    select(Order).where(Order.checkout_id == str(checkout_id))
-                ).first()
-            if order is None:
-                logger.warning(
-                    "Whop payment joined to nothing: metadata.order_id=%r "
-                    "checkout_configuration_id=%r",
-                    order_id,
-                    checkout_id,
-                )
-                return
-            order_id = order.id
-
-        url = order.url
-
-        # Deduping on `webhook-id` only makes *retries* safe, and that is not the same as making
-        # *payments* safe: two deliveries carrying different ids for one payment each pass the
-        # event check and each start a scan, leaving the order pointing at the second while the
-        # first runs orphaned. The invariant we actually need is one paid order, one scan.
-        #
-        # Claim the order with a conditional UPDATE rather than a read-then-write, so two
-        # concurrent deliveries cannot both see `pending` and both proceed.
-        claimed = session.execute(
-            update(Order)
-            .where(Order.id == order.id, Order.status == "pending")
-            .values(status="paid")
-        ).rowcount
-
-    if not claimed:
-        logger.info(
-            "Ignoring duplicate payment for order %s — already claimed by an earlier delivery.",
-            order_id,
-        )
-        return
-
-    # We have taken the money at this point. If the scan cannot even be created — an
-    # `UnsafeTargetError` because the host stopped resolving between checkout and payment is the
-    # realistic case — the order would sit at `paid` with `scan_id` NULL and nothing anywhere
-    # saying so: a customer charged for nothing, discoverable only by reading the logs. Record
-    # the failure on the order so it is visible and refundable.
-    try:
-        scan_id = pipeline.create_scan(url, order_id=str(order_id))
-    except Exception as exc:
-        logger.exception("Paid order %s could not start a scan for %r.", order_id, url)
-        with session_scope() as session:
-            order = session.get(Order, str(order_id))
-            if order is not None:
-                order.status = "refund_due"
-                order.error = f"{type(exc).__name__}: {exc}"[:500]
-        return
-
-    with session_scope() as session:
-        order = session.get(Order, str(order_id))
-        if order is not None:
-            order.scan_id = scan_id
-
-    logger.info("Payment received for order %s — scan %s starting.", order_id, scan_id)
-    await _run_scan_safely(scan_id)
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════
@@ -685,13 +481,13 @@ def task_r1(request: Request, scan_id: str, pid: str | None = None) -> Any:
             "step_intent": f.step_intent,
             "expected": f.expected,
             "observed": f.observed,
-            "before": f.screenshot_before_url,
-            "after": f.screenshot_after_url,
-            "console_errors": f.console_errors or [],
-            "failed_requests": f.failed_requests or [],
-        }
-        for f in ordered
-    ]
+                "before": to_display_path(f.screenshot_before_url),
+                "after": to_display_path(f.screenshot_after_url),
+                "console_errors": f.console_errors or [],
+                "failed_requests": f.failed_requests or [],
+            }
+            for f in ordered
+        ]
 
     return templates.TemplateResponse(
         request,
@@ -967,6 +763,12 @@ def report_page(request: Request, scan_id: str, version: int = 2) -> Any:
         scan_url, scan_status, scan_source = scan.url, scan.status, scan.source
         scan_error = scan.error
         released = scan.released
+        # sqlite drops tzinfo on round-trip even though the column is declared
+        # `DateTime(timezone=True)` — `scan.created_at` comes back naive, and `now_utc()`
+        # writes naive-but-UTC values throughout this codebase, so treat it as UTC explicitly
+        # rather than comparing a naive and an aware datetime (raises `TypeError`).
+        created_at_utc = scan.created_at.replace(tzinfo=UTC) if scan.created_at.tzinfo is None else scan.created_at
+        scan_elapsed_seconds = max(0, int((datetime.now(UTC) - created_at_utc).total_seconds()))
         rows = session.scalars(select(Finding).where(Finding.scan_id == scan_id)).all()
         by_id = {row.id: row for row in rows}
 
@@ -989,12 +791,24 @@ def report_page(request: Request, scan_id: str, version: int = 2) -> Any:
                 "severity": finding.agent_severity,
                 "confidence": finding.agent_confidence,
                 "category": finding.category,
-                "before": finding.screenshot_before_url,
-                "after": finding.screenshot_after_url,
+                "before": to_display_path(finding.screenshot_before_url),
+                "after": to_display_path(finding.screenshot_after_url),
                 "console_errors": finding.console_errors or [],
                 "failed_requests": finding.failed_requests or [],
             }
         )
+
+    proof_screenshots: list[str] = []
+    if not findings and scan_status == "clean":
+        # A clean result has no Finding rows, so the pages actually visited would otherwise be
+        # invisible — indistinguishable from a scan that never ran. `PlaywrightSource` still
+        # writes every before/after screenshot to `evidence/{scan_id}/` even when nothing it
+        # saw became a finding (app/sources/playwright_source.py `_shot`); glob those out so
+        # "no findings" reads as "we looked and it was clean," not "we have nothing to show you."
+        scan_evidence_dir = evidence_root() / scan_id
+        if scan_evidence_dir.is_dir():
+            names = sorted(p.name for p in scan_evidence_dir.glob("*.png"))[:12]
+            proof_screenshots = [to_display_path(public_url(scan_id, n)) for n in names]
 
     return templates.TemplateResponse(
         request,
@@ -1003,6 +817,7 @@ def report_page(request: Request, scan_id: str, version: int = 2) -> Any:
             "scan_id": scan_id,
             "scan_url": scan_url,
             "scan_status": scan_status,
+            "proof_screenshots": proof_screenshots,
             # The Playwright journey runs as a `BackgroundTask` and can take up to ~90s
             # (12 steps x ~7s each); the caller is redirected here immediately. Without this,
             # the "no findings" branch below fired for a scan that simply had not finished yet
@@ -1010,6 +825,7 @@ def report_page(request: Request, scan_id: str, version: int = 2) -> Any:
             # mid-flight, on every single scan, until the background task happened to finish
             # before they looked.
             "scan_in_progress": scan_status in {"queued", "scanning"},
+            "scan_elapsed_seconds": scan_elapsed_seconds,
             "scan_error": scan_error,
             "scan_source": scan_source,
             "released": released,

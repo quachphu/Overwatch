@@ -25,29 +25,6 @@ export default function App() {
     }
     setStatus({ kind: "working" });
 
-    // Checkout first: a paid scan is the product. If Whop is unreachable the API answers 502
-    // with checkout_url null, and we fall through to scanning rather than dead-ending the
-    // customer — revenue is second in the cut order, the scan is first (docs/RUNBOOK.md).
-    try {
-      const response = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok && data.checkout_url) {
-        window.location.href = data.checkout_url;
-        return;
-      }
-      if (response.status === 400 && data.detail) {
-        setStatus({ kind: "error", message: String(data.detail) });
-        return;
-      }
-    } catch {
-      // Network-level failure on checkout is not fatal here; try the scan.
-    }
-
     try {
       const response = await fetch("/api/scan", {
         method: "POST",
