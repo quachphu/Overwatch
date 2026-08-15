@@ -1130,3 +1130,99 @@ Recorded so nobody re-fixes a non-bug.
 * **A failed screenshot rendering as a broken image.** Not possible: `_shot` returns `""` and every
   `<img>` in `t_r1.html` is guarded.
 * **`_flag` mishandling `"false"`.** Correct as written; `bool("false")` is never evaluated.
+
+### 13.10 The registration name did not match the mention the prompts send
+
+Found while walking the Band "Connect Remote Agent" form. `docs/AGENTS.md` told us to register the
+second agent as **Triage Officer**, but every prompt routes to `@Triage` — Scout's step 3 and
+Recruiter's step 5 both hand off with `@Triage`.
+
+Verified against docs.band.ai/getting-started/connect-remote-agent (fetched 2026-08-14): an in-room
+mention resolves against the agent's display **Name**, the doc's own example being
+`@My Agent Hello! What can you help me with?`. The Agent API reference adds two constraints that
+compound it — a mention only routes to an entity **already a participant in the room**, and an
+agent cannot mention itself.
+
+So `@Triage` would have resolved to nothing and the Scout-to-Triage handoff, the first link in the
+pipeline, would have silently gone nowhere. Nothing errors; the message is simply delivered to no
+one, which is the same signature as the duplicate-`agent_id` failure and would have been just as
+slow to find at 15:00.
+
+Fixed on the registration side rather than the prompt side: the prompt strings are load-bearing and
+copied verbatim from AGENTS.md by instruction, so the name moved to `Triage`. `DISPLAY_NAMES` is
+only used for log lines, so this was a documentation-and-registration bug rather than a code one —
+the value that actually matters is typed into Band's UI, which is exactly why nothing in the test
+suite could have caught it.
+
+Also recorded there, because both are silent and neither is inferable from the form: Personal
+Registry Access must stay checked or `band_lookup_peers` sees nothing, and all five agents must be
+added to the room before the first handoff.
+
+### 13.11 The Whop checkout client sent a field name the live API does not recognize
+
+Found from a real checkout attempt returning `400 parameter_missing: plan.unlimited_stock` — a
+field we were, in fact, sending. The client's docstring claimed the request shape was "verified"
+against `whop_sdk` 0.0.41's generated types, and it was, but that package is stale relative to the
+live API. Fetching `docs.whop.com/api-reference/beta/checkout-configurations/create-a-checkout-configuration`
+directly (2026-08-15, `x-api-version-date: 2026-08-13`) shows the account-association field named
+`account_id` in all five of its occurrences — once at the top level, once nested under `plan`, once
+in a documented `400` example body reading `"account_id is required"` — and `company_id` in none of
+them. We sent `company_id`.
+
+An unrecognized field is dropped rather than rejected, so this did not 400 on its own. The theory
+that fits the evidence without a live retest to fully confirm it: with no account resolved, Whop's
+validator has nothing to attach the inline plan to, and the 400 it actually returns names the next
+field down its check order rather than the one that is truly missing — a misleading error rather
+than a wrong one. Fixed by sending `account_id` at both call sites, and pinned with
+`tests/test_whop_payloads.py`, which asserts on the literal JSON body a mocked transport receives
+rather than trusting the SDK types a second time.
+
+### 13.12 The Chromium revision on disk did not match the pinned Playwright version
+
+`playwright==1.48.0` (`requirements.txt`) expects Chromium build **1140**. An earlier, unpinned
+`playwright install chromium` had put build **1208** in `~/Library/Caches/ms-playwright/` instead —
+newer than what this project's pinned SDK talks to — so every real scan failed at
+`browser.launch()` with `Executable doesn't exist at .../chromium-1140/...` and silently produced
+zero findings; nothing upstream treated that as an error worth surfacing on the report itself.
+Fixed by installing the matching build: `.venv/bin/playwright install chromium`, which is also now
+the first line of the Playwright setup instructions rather than an assumption that "browsers are
+installed" means "the right browsers are installed."
+
+### 13.13 `.env` edits had no effect in a terminal that had already exported the same key
+
+`app/config.py` called `load_dotenv()` with its default `override=False`. python-dotenv's
+documented behaviour for that default: a key already present in the process environment —
+including an empty string — is left alone, and the `.env` file's value for that key is silently
+dropped. §13.11's fix (send `account_id` instead of `company_id`) was correct but inert for an
+entire debugging round: `WHOP_COMPANY_ID` had been exported empty in the terminal session at some
+earlier setup step (plausibly a `cp .env.example .env` / manual export sequence from earlier in
+the session), so every subsequent edit to `.env` on disk was ignored by the already-running shell,
+and Whop kept 400ing with `Missing required parameter: account_id` even after the file said
+otherwise. `.env`'s own header claims "Every variable here is read by `app/config.py` — nothing
+else is," which is only true with `override=True`. Fixed: `load_dotenv(override=True)` in
+`app/config.py`, so the file on disk is authoritative regardless of what a terminal already has
+exported. Surfaced `tests/test_whop_payloads.py::test_checkout_omits_account_id_when_unset`, which
+had been silently relying on the developer's local `.env` happening to leave `WHOP_COMPANY_ID`
+blank; fixed by overriding `client.company_id` directly rather than trusting the constructor's
+`None` argument to beat a populated `settings.whop_company_id`.
+
+### 13.14 The report page called a scan "clean" while it was still running
+
+`/api/scan` returns immediately (`status: "scanning"`) and runs the actual Playwright journey in
+a `BackgroundTask` — up to ~90s (12 interactive steps at up to ~7s each: a 5s click timeout, an
+1.8s settle wait, a 0.4s rate limit). `report.html`'s only condition for "No findings. A clean
+app is a real result..." was `{% if not findings %}` — it never checked `scan_status`, so the
+message rendered with equal confidence whether the scan had genuinely finished clean or had not
+gotten past its first few steps yet. Every scan looked "clean" for the first ~20-90 seconds of its
+own life, and if the operator (or a customer) loaded the report page in that window and did not
+manually reload, they never saw the real result. This explains every "0 findings" report seen
+during live testing on 2026-08-15, confirmed by reproducing it end to end: submitting a scan
+against a page with a guaranteed 500/404 (`the-internet.herokuapp.com/status_codes`) and polling
+the report page showed `status: scanning, 0 findings` at t=8s and t=16s, then `status: scanned, 3
+findings` (including a `blocker`) at t=24s — the exact same page, the exact same code, two
+different honest states, several seconds apart. Fixed: `report_page` now computes
+`scan_in_progress = scan_status in {"queued", "scanning"}` and passes it plus `scan.error` to the
+template; `report.html` shows a distinct "scan in progress" notice (with a `<meta
+http-equiv="refresh" content="4">` so the page catches up on its own) while in progress, a
+distinct failure notice with the stored error when `status == "failed"`, and reserves the "clean
+app" message for a scan that has actually reached a terminal state with zero findings.

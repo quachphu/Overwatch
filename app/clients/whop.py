@@ -7,11 +7,17 @@ Written against `httpx` rather than `whop_sdk` for one reason: the two facts we 
 checkout URL and the `metadata` passthrough — must be visible and correctable in one line, and
 an SDK hides both behind method calls.
 
-**Verification status: request and response shapes verified.** Every field below was read from
-the Stainless-generated types in `whop_sdk` 0.0.41, which are generated from Whop's OpenAPI
-spec, at `.venv/…/whop_sdk/types/checkout_configuration_create_{params,response}.py`. Field
-docstrings quoted in comments are verbatim from that spec. No live call has been made yet —
-`scripts/probe_whop.py` does that.
+**Verification status: request and response shapes verified against the live OpenAPI spec**
+(`https://docs.whop.com/api-reference/beta/checkout-configurations/create-a-checkout-configuration`,
+fetched 2026-08-15, `x-api-version-date: 2026-08-13`) — not just the installed `whop_sdk` 0.0.41
+package. That package's `checkout_configuration_create_params.py` names the top-level and nested
+plan account field **`company_id`**; the live spec names it **`account_id`** in every one of its
+five occurrences, and shows `"account_id is required"` as an example 400 body. The SDK's generated
+types are stale relative to the API that is actually live. Sending the wrong key does not 400 by
+itself — an unrecognized field is silently dropped — but it means Whop can never resolve which
+account owns the inline plan, which is the likely reason a real request came back rejecting an
+unrelated nested field (`plan.unlimited_stock`, which *is* present in the payload) rather than
+naming the field that was actually missing. See RESEARCH.md §13.11.
 """
 
 from __future__ import annotations
@@ -95,7 +101,11 @@ class WhopClient:
             "metadata": {"order_id": order_id, "target_url": url},
         }
         if self.company_id:
-            payload["company_id"] = self.company_id
+            # Wire field is `account_id`, not `company_id` — see the module docstring. Set on
+            # both the checkout configuration and the inline plan; the plan's copy is optional
+            # and defaults to "the account resolved from the request", but an API key scoped to
+            # more than one account has nothing to resolve from without the top-level one.
+            payload["account_id"] = self.company_id
 
         if settings.whop_plan_id:
             payload["plan_id"] = settings.whop_plan_id
@@ -111,6 +121,8 @@ class WhopClient:
                 # billing, but it keeps the dashboard readable.
                 "force_create_new_plan": False,
             }
+            if self.company_id:
+                payload["plan"]["account_id"] = self.company_id
 
         response = await self._client.post(CHECKOUT_ENDPOINT, json=payload)
         if response.status_code >= 400:

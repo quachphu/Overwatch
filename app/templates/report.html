@@ -11,6 +11,12 @@
         property decorative.
 #}
 
+{% block head %}
+{% if scan_in_progress %}
+<meta http-equiv="refresh" content="4" />
+{% endif %}
+{% endblock %}
+
 {% block nav %}
 <nav class="nav-pill">
   <a href="/report/{{ scan_id }}?version=1">v1</a>
@@ -59,7 +65,18 @@
   </div>
   {% endif %}
 
-  {% if not findings %}
+  {% if scan_in_progress %}
+  <div class="notice">
+    Scan in progress — the browser is still walking the page (this page refreshes itself
+    every few seconds). A live scan can take up to about 90 seconds. What you see below, if
+    anything, is what has been found so far.
+  </div>
+  {% elif scan_status == 'failed' %}
+  <div class="notice notice--block">
+    <strong>The scan failed before it could finish.</strong>
+    {% if scan_error %}<div class="mono" style="margin-top: 0.5rem">{{ scan_error }}</div>{% endif %}
+  </div>
+  {% elif not findings %}
   <div class="notice">
     No findings. A clean app is a real result and we are not going to invent problems to fill
     a page.

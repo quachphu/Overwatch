@@ -965,6 +965,7 @@ def report_page(request: Request, scan_id: str, version: int = 2) -> Any:
         if scan is None:
             raise HTTPException(status_code=404, detail="Unknown scan.")
         scan_url, scan_status, scan_source = scan.url, scan.status, scan.source
+        scan_error = scan.error
         released = scan.released
         rows = session.scalars(select(Finding).where(Finding.scan_id == scan_id)).all()
         by_id = {row.id: row for row in rows}
@@ -1002,6 +1003,14 @@ def report_page(request: Request, scan_id: str, version: int = 2) -> Any:
             "scan_id": scan_id,
             "scan_url": scan_url,
             "scan_status": scan_status,
+            # The Playwright journey runs as a `BackgroundTask` and can take up to ~90s
+            # (12 steps x ~7s each); the caller is redirected here immediately. Without this,
+            # the "no findings" branch below fired for a scan that simply had not finished yet
+            # — the page told a customer "a clean app is a real result" about a scan still
+            # mid-flight, on every single scan, until the background task happened to finish
+            # before they looked.
+            "scan_in_progress": scan_status in {"queued", "scanning"},
+            "scan_error": scan_error,
             "scan_source": scan_source,
             "released": released,
             "version": effective_version,

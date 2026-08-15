@@ -482,7 +482,10 @@ class PlaywrightSource:
                 # confidence 0.3 put these *ahead* of genuine 5xx findings in the queue.
                 text = str(exc)
                 if any(marker in text for marker in TOOLING_ERROR_MARKERS):
-                    logger.info("Step %d skipped, tooling error: %s", index, text[:160])
+                    # Playwright's actionability call log (why the click never fired — covered
+                    # by an overlay, not stable, off-screen) lives past character 160; the old
+                    # truncation cut it off before the useful part, hiding the real reason.
+                    logger.info("Step %d skipped, tooling error: %s", index, text[:600])
                     continue
                 after = await self._shot(page, scan_id, f"step{index}-after")
                 out.append(

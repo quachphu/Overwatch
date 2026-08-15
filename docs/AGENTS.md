@@ -29,7 +29,13 @@ critic:
   api_key:  "…"
 ```
 
-**Naming:** register them as `Scout`, `Triage Officer`, `Recruiter`, `Bursar`, `Critic`. Never `Assistant`, `Bot`, or `Agent` — LLMs read those as role tokens and mention routing degrades.
+**Naming:** register them as `Scout`, `Triage`, `Recruiter`, `Bursar`, `Critic`, and set each **Handle** to the lowercase form (`scout`, `triage`, …). Never `Assistant`, `Bot`, or `Agent` — LLMs read those as role tokens and mention routing degrades.
+
+The Name must match what the prompts mention, character for character. An in-room mention resolves against the display name — Band's own example is `@My Agent Hello!` — so a name of `Triage Officer` would never receive the `@Triage` that every prompt below sends. This said `Triage Officer` until 2026-08-14; see RESEARCH.md §13.10.
+
+**Personal Registry Access must stay checked** on all five. That is what lets `band_lookup_peers` see the others; with it off an agent sees only its own contact list, and Triage's runtime recruitment of AuthProbe — one of the three Band signals we claim — cannot happen.
+
+A mention only routes to a participant **already in the room**, and an agent cannot mention itself. So all five have to be added to the chat room before the first handoff.
 
 **One WebSocket per `agent_id`.** Two processes on the same ID and the first is dropped silently, no error on either side. If an agent mysteriously goes quiet, this is why.
 

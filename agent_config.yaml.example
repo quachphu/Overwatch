@@ -3,9 +3,11 @@
 # Five separate "Connect Remote Agent" registrations at app.band.ai/agents, each with its own
 # UUID and its own API key. The key is shown exactly once, so paste it here immediately.
 #
-# Register them under these display names: Scout, Triage Officer, Recruiter, Bursar, Critic.
+# Register them under these display Names, and set each Handle to the lowercase form:
+#   Scout / scout, Triage / triage, Recruiter / recruiter, Bursar / bursar, Critic / critic.
 # Never "Assistant", "Bot", or "Agent" — an LLM reads those as role tokens and mention routing
-# degrades (docs/AGENTS.md).
+# degrades. The Name must match character-for-character what the prompts @mention — see
+# docs/AGENTS.md and RESEARCH.md §13.10.
 #
 # One live WebSocket per agent_id. Two processes sharing an id and the first is dropped
 # silently, with no error on either side. Never reuse an id across agents.

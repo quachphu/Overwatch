@@ -12,7 +12,12 @@ from functools import lru_cache
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# override=True: python-dotenv's default silently ignores a key that already exists in the
+# process environment, even if the existing value is "". Any terminal session where a shell
+# profile or an earlier `export` set e.g. WHOP_COMPANY_ID="" would then never see a later edit
+# to .env — the file said one thing, the running app read another. .env is meant to be the one
+# source of truth (see the file's own header comment), so it must win.
+load_dotenv(override=True)
 
 
 def _flag(name: str, default: bool = False) -> bool:

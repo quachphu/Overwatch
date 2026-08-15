@@ -141,9 +141,15 @@ PROMPTS: dict[str, str] = {
 
 # The registration names from docs/AGENTS.md. Never "Assistant", "Bot", or "Agent" — those read
 # as role tokens to an LLM and mention routing degrades.
+#
+# These must match the Band **Name** field character for character, because an in-room mention
+# resolves against the display name — the docs' own example is `@My Agent Hello!`
+# (docs.band.ai/getting-started/connect-remote-agent, Step 6). "triage" is therefore "Triage" and
+# not "Triage Officer": every prompt above routes to `@Triage`, and those prompt strings are
+# load-bearing and copied verbatim, so the registration name is the side that has to move.
 DISPLAY_NAMES: dict[str, str] = {
     "scout": "Scout",
-    "triage": "Triage Officer",
+    "triage": "Triage",
     "recruiter": "Recruiter",
     "bursar": "Bursar",
     "critic": "Critic",
