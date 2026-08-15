@@ -10,9 +10,6 @@ real people through the [Terac](https://terac.com) API to verify which findings 
 which matter. Those human labels recalibrate the report — and a second, fresh panel that never
 saw round one decides whether it actually got better.
 
-The claim isn't "AI finds bugs." It's: **we measured whether paying humans improved the report,
-and here is the number, with its confidence interval.**
-
 Built for the Zero-Human Company Hackathon (Terac, Aug 2026).
 
 ---
